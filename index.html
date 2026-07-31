@@ -1,0 +1,1311 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#ff3b5c" id="themeColorMeta">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<title>سیستم حضور و غیاب</title>
+<!--
+  توجه درباره کارکرد آفلاین:
+  ثبت حضور و غیاب، تقویم، گزارش‌ها و داشبورد همیشه و به‌طور کامل آفلاین کار می‌کنند
+  (تمام اطلاعات در همین مرورگر ذخیره می‌شود). فقط «خروجی/ورودی اکسل» به کتابخانه
+  زیر نیاز دارد. برای اینکه این بخش هم بدون اینترنت کار کند:
+  1) یک‌بار فایل زیر را دانلود کنید:
+     https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js
+  2) آن را با نام xlsx.full.min.js کنار همین فایل html ذخیره کنید.
+  در این صورت خط زیر آن را به‌صورت محلی بارگذاری می‌کند و در غیر این صورت
+  به‌صورت خودکار تلاش می‌کند از اینترنت بارگذاری کند.
+-->
+<script src="xlsx.full.min.js" onerror="
+  (function(){
+    var s = document.createElement('script');
+    s.src = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+    s.onerror = function(){ window.__XLSX_MISSING__ = true; };
+    document.head.appendChild(s);
+  })();
+"></script>
+<script id="appConfig" type="application/json">{"role":"master","id":"master","username":"","passHash":"","salt":"","keyB64":""}</script>
+<style>
+:root{
+  --bg:#f5f3f6; --text:#22232b; --muted:#7c8698; --err:#c81e3a; --ok:#00875f;
+  --card-bg:#fff; --card-shadow:0 3px 16px #2b1a2410;
+  --grad-1:#ff3b5c; --grad-2:#ff7a59;
+  --nav-bg:#fff; --nav-shadow:0 2px 10px #0001;
+  --btn-bg:#f3eef1; --btn-text:#3a2530;
+  --btn-primary-bg:linear-gradient(135deg,#ff3b5c,#ff7a59); --btn-primary-text:#fff;
+  --btn-green-bg:#00b37e; --btn-green-text:#fff;
+  --btn-danger-bg:#ffe1e6; --btn-danger-text:#c81e3a;
+  --btn-ghost-bg:#f3eef1; --btn-ghost-text:#4b3a44;
+  --input-bg:#fff; --input-border:#e1d7db;
+  --table-head-bg:#ff3b5c; --table-head-text:#fff; --table-border:#ece4e8;
+  --stat-bg:#fdf6f7; --stat-border:#ff3b5c;
+  --cal-bg:#fff; --cal-border:#ece4e8; --calhead-bg:#fdf6f7;
+  --day-border:#f1e9ec; --day-hover:#fdf3f4; --weekend-bg:#f8f5f6;
+  --modal-overlay:#1a0e14b3; --modalbox-bg:#fff;
+  --radius:16px;
+}
+[data-theme="dark"]{
+  --bg:#150f13; --text:#f4e9ec; --muted:#b099a1; --err:#ff8a9a; --ok:#4fd39a;
+  --card-bg:#221620; --card-shadow:0 3px 16px #0009;
+  --grad-1:#7a1030; --grad-2:#b23a2e;
+  --nav-bg:#1c1219; --nav-shadow:0 2px 10px #0008;
+  --btn-bg:#2a1c26; --btn-text:#f0dde3;
+  --btn-primary-bg:linear-gradient(135deg,#ff3b5c,#ff7a59); --btn-primary-text:#fff;
+  --btn-green-bg:#00875f; --btn-green-text:#fff;
+  --btn-danger-bg:#4a2028; --btn-danger-text:#ff9aa8;
+  --btn-ghost-bg:#241820; --btn-ghost-text:#dcc7cf;
+  --input-bg:#1c1219; --input-border:#3a2530;
+  --table-head-bg:#7a1030; --table-head-text:#fff; --table-border:#33232b;
+  --stat-bg:#1e1219; --stat-border:#ff7a59;
+  --cal-bg:#1e1219; --cal-border:#33232b; --calhead-bg:#1a1116;
+  --day-border:#2c1d24; --day-hover:#251720; --weekend-bg:#1a1116;
+  --modal-overlay:#000c; --modalbox-bg:#221620;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;font-family:"Segoe UI",Tahoma,"Vazirmatn","IRANSansWeb",Arial,sans-serif;background:var(--bg);color:var(--text);transition:background-color .2s,color .2s;touch-action:manipulation}
+#loginScreen{position:fixed;inset:0;background:linear-gradient(135deg,var(--grad-1),var(--grad-2));display:flex;align-items:center;justify-content:center;z-index:99999;padding:20px}
+#loginScreen.hidden{display:none}
+.loginbox{background:var(--card-bg);color:var(--text);border-radius:22px;padding:34px 26px;width:min(380px,100%);box-shadow:0 20px 60px #0006;text-align:right}
+.loginbox h2{margin:0 0 6px;text-align:center}
+.loginbox p.sub{color:var(--muted);margin:0 0 20px;font-size:13px;text-align:center}
+#appRoot{display:none}
+#appRoot.show{display:block}
+.container{display:flex;min-height:100vh;align-items:stretch}
+.main{flex:1;display:flex;flex-direction:column;padding:20px;padding-top:calc(20px + env(safe-area-inset-top,0px));min-width:0}
+.mainTitle{background:linear-gradient(135deg,var(--grad-1),var(--grad-2));color:#fff;padding:16px;border-radius:var(--radius);text-align:center;font-size:22px;font-weight:800;margin-bottom:16px;box-shadow:0 3px 14px #0002}
+.sectionTitle{background:var(--card-bg);color:var(--text);border-radius:14px;padding:13px 16px;box-shadow:var(--card-shadow);margin-bottom:16px;font-weight:700;font-size:16px}
+.tabsWrap{flex:1;min-width:0}
+.sidebar{width:112px;flex-shrink:0;background:linear-gradient(180deg,var(--grad-1),var(--grad-2));color:#fff;display:flex;flex-direction:column;justify-content:space-between;align-items:center;padding:22px 0 calc(18px + env(safe-area-inset-bottom,0px));gap:14px}
+.profile{width:58px;height:58px;border-radius:50%;background:#ffffff30;display:flex;justify-content:center;align-items:center;font-size:24px;font-weight:800;flex-shrink:0}
+.menu{display:flex;flex-direction:column;gap:14px;align-items:center}
+.menu button{width:52px;height:52px;border:none;border-radius:50%;cursor:pointer;background:#ffffff22;color:#fff;font-size:20px;transition:background .15s,transform .05s}
+.menu button:hover{background:#ffffff38}.menu button:active{transform:scale(.94)}
+.menu button.active{background:#fff;color:var(--grad-1)}
+.themeToggleSide{width:44px;height:44px;border:none;border-radius:50%;cursor:pointer;background:#ffffff22;color:#fff;font-size:18px}
+.themeToggleSide:hover{background:#ffffff38}
+.sidebar .logout{width:78px;height:38px;border:none;background:#ef5350;color:#fff;border-radius:10px;cursor:pointer;font-weight:700;font-family:inherit}
+.sidebar .logout:hover{filter:brightness(.95)}
+.btn{border:0;border-radius:12px;padding:10px 16px;cursor:pointer;font-family:inherit;font-weight:700;background:var(--btn-bg);color:var(--btn-text);transition:filter .15s,transform .05s}
+.btn:hover{filter:brightness(.96)}.btn:active{transform:scale(.97)}
+.btn.primary{background:var(--btn-primary-bg);color:var(--btn-primary-text)}.btn.green{background:var(--btn-green-bg);color:var(--btn-green-text)}.btn.danger{background:var(--btn-danger-bg);color:var(--btn-danger-text)}.btn.ghost{background:var(--btn-ghost-bg);color:var(--btn-ghost-text)}
+.card>h2,.card>.toolbar>div>h2{margin-top:0}
+.toolbar h2{white-space:nowrap}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.tab{display:none}.tab.active{display:block}.card{background:var(--card-bg);border-radius:var(--radius);padding:20px;margin-bottom:18px;box-shadow:var(--card-shadow)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px}.stat{padding:18px;border-radius:14px;background:var(--stat-bg);border-right:5px solid var(--stat-border)}.stat b{font-size:25px;display:block;margin-top:7px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}.field{display:flex;flex-direction:column;gap:6px;min-width:160px;flex:1}
+.field label{color:var(--text)}
+.hint{color:var(--muted);font-size:13px;margin:6px 2px 0}
+input,select,textarea{padding:11px;border:1px solid var(--input-border);border-radius:10px;font-family:inherit;background:var(--input-bg);color:var(--text);width:100%;font-size:15px}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--grad-1);outline-offset:1px}
+input:disabled{opacity:.7}
+.tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{width:100%;border-collapse:collapse;margin-top:14px;min-width:760px}th,td{padding:10px 8px;border-bottom:1px solid var(--table-border);text-align:center;white-space:nowrap}th{background:var(--table-head-bg);color:var(--table-head-text);position:sticky;top:0}
+.status{font-weight:bold;border-radius:20px;padding:5px 10px;display:inline-block}
+.حاضر{background:#e2f0d9;color:#276221}.غایب{background:#f4cccc;color:#9c0006}.مرخصی{background:#fff2cc;color:#7f6000}.مأموریت{background:#d9eaf7;color:#1f4e78}.تاخیر{background:#fce4d6;color:#c55a11}.نیمه‌وقت{background:#ddebf7;color:#1f4e78}
+.calendar{max-width:850px;margin:15px auto;border:1px solid var(--cal-border);border-radius:16px;overflow:hidden;background:var(--cal-bg)}.calhead{display:flex;justify-content:space-between;align-items:center;padding:12px 15px;background:var(--calhead-bg);gap:8px;flex-wrap:wrap}
+.week,.days{display:grid;grid-template-columns:repeat(7,1fr)}.week div{padding:10px;text-align:center;background:var(--table-head-bg);color:var(--table-head-text);font-size:13px}
+.day{min-height:74px;border:1px solid var(--day-border);padding:6px;cursor:pointer;position:relative;background:var(--cal-bg);color:var(--text)}.day:hover{background:var(--day-hover)}
+.day.present{background:#e2f0d9;color:#1c1c1c}.day.absent{background:#f4cccc;color:#1c1c1c}.day.leave{background:#fff2cc;color:#1c1c1c}.day.mission{background:#d9eaf7;color:#1c1c1c}.day.late{background:#fce4d6;color:#1c1c1c}.day.halfday{background:#ddebf7;color:#1c1c1c}.day.weekend{background:var(--weekend-bg)}.day.today{outline:2px dashed var(--grad-1);outline-offset:-2px}
+.toolbar{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}
+#statusModal{display:none;position:fixed;inset:0;background:var(--modal-overlay);z-index:9999;align-items:center;justify-content:center;padding:18px}
+.modalbox{background:var(--modalbox-bg);color:var(--text);border-radius:20px;width:min(500px,100%);padding:24px;text-align:center;box-shadow:0 20px 60px #0006;max-height:90vh;overflow-y:auto}
+.statusgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.statusgrid button{border:0;border-radius:14px;padding:14px 6px;font-family:inherit;font-weight:bold;cursor:pointer;opacity:.55;border:2px solid transparent;color:#1c1c1c;min-height:44px}
+.statusgrid button.picked{opacity:1;border-color:var(--grad-1)}
+.modalfoot{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.modalfoot .wide{grid-column:1/-1}
+.err{color:var(--err);font-size:12px;min-height:16px;margin:2px 0 0}
+.ok{color:var(--ok);font-size:13px;min-height:16px;margin:2px 0 0}
+
+@media (max-width:760px){
+  .container{flex-direction:column}
+  .main{padding:12px;padding-bottom:96px}
+  .mainTitle{font-size:17px;padding:13px}
+  .card{padding:16px;border-radius:14px}
+  .toolbar{flex-direction:column;align-items:stretch}
+  .row{flex-direction:column;align-items:stretch}
+  .field{min-width:0}
+  .modalfoot{grid-template-columns:1fr}
+  table{min-width:640px}
+  .sidebar{position:fixed;left:0;right:0;top:auto;bottom:0;z-index:900;flex-direction:row;justify-content:space-between;align-items:center;width:auto;padding:8px 12px calc(8px + env(safe-area-inset-bottom,0px));box-shadow:0 -3px 14px #0002}
+  .profile{width:40px;height:40px;font-size:17px}
+  .menu{flex-direction:row;gap:6px}
+  .menu button{width:42px;height:42px;font-size:16px}
+  .themeToggleSide{width:38px;height:38px}
+  .sidebar .logout{width:56px;height:34px;font-size:12px}
+  .btn,button,input,select{min-height:44px}
+  .statusgrid button{min-height:48px}
+}
+</style>
+</head>
+<body>
+<div id="loginScreen">
+  <div class="loginbox">
+    <h2>سیستم حضور و غیاب</h2>
+    <p class="sub" id="loginSubtitle">نام کاربری و رمز عبورتان را وارد کنید</p>
+    <div class="field" style="margin-bottom:10px"><label>نام کاربری</label><input id="loginUser" autocomplete="username"></div>
+    <div class="field" style="margin-bottom:10px"><label>رمز عبور</label><input id="loginPass" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <div class="field" style="margin-bottom:10px;display:none" id="loginPhoneField"><label>شماره تماس مدیر</label><input id="loginPhone" placeholder="09xxxxxxxxx" onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <div class="field" style="margin-bottom:10px;display:none" id="loginActivationField"><label>کد فعال‌سازی (فقط بار اول روی این گوشی/مرورگر)</label><input id="loginActivation" inputmode="numeric" placeholder="کدی که مدیر به شما داده" onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <p class="err" id="loginErr" style="text-align:center"></p>
+    <button type="button" class="btn primary" style="width:100%;margin-top:6px" id="loginSubmitBtn" onclick="doLogin()">ورود</button>
+    <button type="button" class="btn ghost" id="createAccountBtn" style="width:100%;margin-top:10px;display:none" onclick="handleCreateAccountClick()">ایجاد حساب کاربری</button>
+    <div id="firstRunNote" style="display:none;margin-top:14px;font-size:12px;color:var(--muted);text-align:center">این اولین اجراست؛ نام کاربری، رمز عبور (حداقل ۸ کاراکتر، شامل حرف بزرگ و کوچک انگلیسی) و شماره تماسی که وارد می‌کنید به‌عنوان اطلاعات مدیر ذخیره می‌شود.</div>
+  </div>
+</div>
+<div id="appRoot">
+<div class="container">
+<div class="main">
+<div class="mainTitle">سیستم حضور و غیاب</div>
+<div class="sectionTitle" id="sectionTitleBar">ثبت حضور</div>
+<div class="tabsWrap">
+<section id="attendance" class="tab active">
+<div class="card">
+<div class="toolbar"><div><h2 style="margin:0">تقویم ثبت روزانه</h2></div>
+<div class="row"><div class="field"><label>پرسنل</label><select id="attEmployee" onchange="onEmployeeChange()"></select></div>
+<div class="field"><label>ماه</label><select id="attMonth" onchange="onMonthYearChange()"></select></div>
+<div class="field" style="max-width:100px"><label>سال</label><input id="attYear" type="number" onchange="onMonthYearChange()"></div>
+</div></div>
+<div class="calendar"><div class="calhead"><button type="button" onclick="changeMonth(-1)">ماه قبل</button><button type="button" onclick="goToday()">امروز</button><b id="calTitle"></b><button type="button" onclick="changeMonth(1)">ماه بعد</button></div>
+<div class="week"><div>شنبه</div><div>یکشنبه</div><div>دوشنبه</div><div>سه‌شنبه</div><div>چهارشنبه</div><div>پنجشنبه</div><div>جمعه</div></div>
+<div id="days" class="days"></div></div></div>
+<div class="card"><h2>جزئیات ثبت‌های اخیر</h2>
+<div class="tablewrap"><table><thead><tr><th>نام</th><th>تاریخ</th><th>وضعیت</th><th>سطح کارایی</th><th>ورود</th><th>خروج</th><th>توضیحات</th><th>عملیات</th></tr></thead><tbody id="recordsBody"></tbody></table></div></div>
+</section>
+
+<section id="employees" class="tab">
+<div class="card"><h2 id="empFormTitle">افزودن پرسنل جدید</h2><div class="row">
+<div class="field"><label>نام و نام خانوادگی</label><input id="eName"></div>
+<div class="field"><label>کد ملی (۱۰ رقم)</label><input id="eNational" maxlength="10" inputmode="numeric" placeholder="۱۰ رقم عددی"></div>
+<div class="field"><label>تولد (شمسی)</label><input id="eBirth" placeholder="1370/01/01"></div>
+<div class="field"><label>تماس</label><input id="ePhone"></div>
+<button type="button" class="btn primary" id="empSaveBtn" onclick="addEmployee()">افزودن</button>
+<button type="button" class="btn ghost" id="empCancelBtn" style="display:none" onclick="cancelEditEmployee()">انصراف</button>
+</div>
+<p class="err" id="empErr"></p>
+</div>
+<div class="card">
+<div class="toolbar"><h2>افزودن گروهی پرسنل از اکسل</h2><span class="actions">
+<button type="button" class="btn ghost" onclick="downloadEmployeeTemplate()">دانلود فایل نمونه</button>
+<label class="btn green" style="background:#1f6b3a">وارد کردن پرسنل از Excel<input type="file" hidden onchange="importEmployees(event)" accept=".xlsx,.xls"></label>
+</span></div>
+<p class="hint">
+ابتدا «دانلود فایل نمونه» را بزنید، سطرهای خالی را با نام، کد ملی، تاریخ تولد و شماره تماس هر پرسنل پر کنید، سپس همان فایل را از «وارد کردن پرسنل از Excel» بارگذاری کنید. تطبیق بر اساس کد ملی انجام می‌شود؛ کد ملی تکراری به‌روزرسانی و کد ملی جدید اضافه می‌شود.
+</p>
+</div>
+<div class="card"><h2>لیست پرسنل</h2>
+<div class="tablewrap"><table><thead><tr><th>#</th><th>نام</th><th>کد ملی</th><th>تولد</th><th>تماس</th><th>عملیات</th></tr></thead><tbody id="employeeBody"></tbody></table></div></div>
+</section>
+
+<section id="report" class="tab">
+<div class="card"><div class="toolbar"><h2>خروجی گرفتن کلی حضور و غیاب</h2><span class="actions">
+<button type="button" class="btn green" onclick="exportExcel()">خروجی ثبت‌های حضور (Excel)</button>
+<label class="btn green" style="background:#1f6b3a">وارد کردن ثبت‌های حضور از Excel<input type="file" hidden onchange="importExcel(event)" accept=".xlsx,.xls"></label>
+</span></div>
+<p class="hint">
+فایل خروجی را در Excel باز کنید، ستون‌های «وضعیت»، «سطح کارایی»، «ورود/خروج» و «توضیحات» را ویرایش یا ردیف جدید اضافه کنید، سپس همان فایل را از «وارد کردن ثبت‌های حضور از Excel» بازگردانید. تطبیق ردیف‌ها بر اساس کد ملی و تاریخ است.
+</p>
+</div>
+<div class="card"><div class="row">
+<div class="field"><label>انتخاب پرسنل</label><select id="repEmployee" onchange="renderReport()"></select></div>
+<div class="field"><label>ماه</label><select id="repMonth" onchange="renderReport()"></select></div>
+<div class="field"><label>سال</label><input id="repYear" type="number" onchange="renderReport()"></div>
+</div></div>
+<div class="card"><div class="tablewrap"><table><thead><tr><th>تاریخ</th><th>وضعیت</th><th>سطح کارایی</th><th>ورود</th><th>خروج</th><th>توضیحات</th></tr></thead><tbody id="reportBody"></tbody></table></div></div>
+</section>
+
+<section id="dashboard" class="tab">
+<div class="grid"><div class="stat">کل ثبت‌ها<b id="mTotal">0</b></div><div class="stat">حاضر<b id="mPresent">0</b></div><div class="stat">غایب<b id="mAbsent">0</b></div><div class="stat">درصد حضور<b id="mRate">0%</b></div></div>
+<div class="card"><h2>خلاصه عملکرد ماهانه کل پرسنل</h2><div class="tablewrap"><table><thead><tr><th>نام</th><th>حاضر</th><th>غایب</th><th>مرخصی</th><th>تاخیر</th><th>نیمه‌وقت</th><th>درصد</th></tr></thead><tbody id="dashBody"></tbody></table></div></div>
+</section>
+
+<section id="daughters" class="tab">
+<div class="card"><h2>ایجاد نسخه اختصاصی برای یک نفر</h2>
+<p class="hint">یک فایل مستقل و کاملاً آفلاین برای همین فرد ساخته می‌شود؛ او با ورود به فایل خودش، مستقیماً حضور و غیابش را ثبت می‌کند. این فرد به‌طور خودکار به لیست پرسنل همین نسخه هم اضافه می‌شود تا بعداً بتوانید گزارشش را ادغام کنید. خروجی اکسلی که او می‌گیرد رمزشده است و فقط همین نسخه می‌تواند آن را باز کند.</p>
+<div class="row">
+<div class="field"><label>نام</label><input id="dFirst"></div>
+<div class="field"><label>نام خانوادگی</label><input id="dLast"></div>
+<div class="field"><label>کد ملی (۱۰ رقم)</label><input id="dNational" maxlength="10" inputmode="numeric" placeholder="۱۰ رقم عددی"></div>
+<div class="field"><label>نام کاربری ورود</label><input id="dUser"></div>
+<div class="field"><label>رمز عبور ورود</label><input id="dPass" type="password"></div>
+<button type="button" class="btn primary" onclick="createDaughterFile()">ایجاد و دانلود فایل</button>
+</div>
+<p class="err" id="dErr"></p>
+</div>
+<div class="card"><h2>لیست نسخه‌های ایجادشده</h2>
+<div class="tablewrap"><table><thead><tr><th>#</th><th>نام</th><th>کد ملی</th><th>نام کاربری</th><th>کد فعال‌سازی</th><th>تاریخ ایجاد</th><th>عملیات</th></tr></thead><tbody id="daughterBody"></tbody></table></div>
+<p class="hint">اگر ردیفی را از این لیست حذف کنید، دیگر نمی‌توانید فایل ارسالی همان فرد را رمزگشایی کنید.</p>
+</div>
+<div class="card"><div class="toolbar"><h2>وارد کردن و رمزگشایی فایل ارسالی از یک نفر</h2><span class="actions">
+<label class="btn green" style="background:#1f6b3a">انتخاب فایل رمزشده (.attx)<input type="file" hidden accept=".attx,.json" onchange="importDaughterFile(event)"></label>
+</span></div>
+<p class="hint">فایلی که یک پرسنل از نسخه اختصاصی خودش برای‌تان ارسال کرده را همین‌جا بارگذاری کنید تا ثبت‌های او در گزارش کلی ادغام و همزمان یک فایل اکسل قابل مشاهده از آن ساخته شود.</p>
+</div>
+</section>
+
+<section id="profile" class="tab">
+<div class="card">
+<h2>پروفایل من</h2>
+<p class="hint">نام کاربری‌تان و شماره تماسی که برای پرسنل نمایش داده می‌شود را همین‌جا می‌بینید.</p>
+<div class="row">
+<div class="field"><label>نام کاربری</label><input id="profileUsername" disabled></div>
+<div class="field" id="profilePhoneWrap"><label id="profilePhoneLabel">شماره تماس مدیر</label><input id="profilePhone"></div>
+<button type="button" class="btn ghost" id="profilePhoneSaveBtn" onclick="saveAdminPhone()">ذخیره شماره تماس</button>
+</div>
+</div>
+<div class="card">
+<h2>تغییر رمز عبور</h2>
+<p class="hint">برای امنیت بیشتر، هر چند وقت یک‌بار رمز عبورتان را عوض کنید. رمز جدید باید حداقل ۸ کاراکتر باشد و شامل حرف بزرگ و کوچک انگلیسی.</p>
+<div class="row">
+<div class="field"><label>رمز عبور فعلی</label><input id="curPass" type="password" autocomplete="current-password"></div>
+<div class="field"><label>رمز عبور جدید</label><input id="newPass" type="password" autocomplete="new-password"></div>
+<div class="field"><label>تکرار رمز عبور جدید</label><input id="newPass2" type="password" autocomplete="new-password"></div>
+<button type="button" class="btn primary" onclick="changePassword()">ذخیره رمز جدید</button>
+</div>
+<p class="err" id="profileErr"></p>
+<p class="ok" id="profileOk"></p>
+</div>
+<div class="card">
+<div class="toolbar">
+<div><h2 style="margin:0">خروج از حساب</h2><p class="hint" style="margin-top:4px">با خروج، به صفحه ورود بازمی‌گردید و باید دوباره وارد شوید.</p></div>
+<button type="button" class="btn danger" onclick="logout()">خروج از حساب کاربری</button>
+</div>
+</div>
+</section>
+</div>
+</div>
+<div class="sidebar">
+<div class="profile" id="sidebarProfile">👤</div>
+<div class="menu">
+<button class="active" onclick="showTab('attendance',this)" title="ثبت حضور">📋</button>
+<button id="employeesNavBtn" onclick="showTab('employees',this)" title="پرسنل">👥</button>
+<button onclick="showTab('report',this)" title="گزارش ماهانه">📊</button>
+<button onclick="showTab('dashboard',this)" title="داشبورد">📈</button>
+<button id="daughtersNavBtn" onclick="showTab('daughters',this)" style="display:none" title="ایجاد نسخه برای پرسنل">🧾</button>
+<button onclick="showTab('profile',this)" title="پروفایل">👤</button>
+</div>
+<button type="button" class="themeToggleSide" id="themeToggleBtn" onclick="toggleTheme()" title="تغییر تم">🌙</button>
+<button class="logout" onclick="logout()">خروج</button>
+</div>
+</div>
+</div>
+
+<div id="statusModal">
+  <div class="modalbox">
+    <h3 id="modalTitle">ثبت وضعیت</h3><p id="modalDateText"></p>
+    <div class="statusgrid" id="statusGrid">
+      <button type="button" data-s="حاضر" style="background:#e2f0d9" onclick="pickStatus('حاضر')">حاضر</button>
+      <button type="button" data-s="غایب" style="background:#f4cccc" onclick="pickStatus('غایب')">غایب</button>
+      <button type="button" data-s="مرخصی" style="background:#fff2cc" onclick="pickStatus('مرخصی')">مرخصی</button>
+      <button type="button" data-s="مأموریت" style="background:#d9eaf7" onclick="pickStatus('مأموریت')">مأموریت</button>
+      <button type="button" data-s="تاخیر" style="background:#fce4d6" onclick="pickStatus('تاخیر')">تاخیر</button>
+      <button type="button" data-s="نیمه‌وقت" style="background:#ddebf7" onclick="pickStatus('نیمه‌وقت')">نیمه‌وقت</button>
+    </div>
+    <div class="field" style="margin-bottom:12px"><label>سطح کارایی (۱ تا ۴) <span id="modalLevelHint" style="font-weight:normal;color:#7a8699"></span></label>
+      <select id="modalLevel">
+        <option value="">انتخاب سطح...</option><option value="1">سطح 1</option><option value="2">سطح 2</option><option value="3">سطح 3</option><option value="4">سطح 4</option>
+      </select>
+    </div>
+    <div class="row" style="margin-bottom:10px">
+      <div class="field"><label>ورود</label><input type="time" id="modalIn"></div>
+      <div class="field"><label>خروج</label><input type="time" id="modalOut"></div>
+    </div>
+    <div class="field"><label>توضیحات</label><textarea id="modalNote" rows="2"></textarea></div>
+    <p class="err" id="modalErr"></p>
+    <div class="modalfoot">
+      <button type="button" class="btn primary wide" onclick="saveModal()">ذخیره</button>
+      <button type="button" class="btn danger" id="modalDeleteBtn" onclick="deleteModalRecord()">حذف</button>
+      <button type="button" class="btn ghost" onclick="closeStatusModal()">بستن</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const DB_KEY = 'attendance_v3_pro';
+let db = { employees: [], records: [] };
+try {
+  const stored = JSON.parse(localStorage.getItem(DB_KEY));
+  if (stored && Array.isArray(stored.employees) && Array.isArray(stored.records)) db = stored;
+} catch (e) { console.warn('بازیابی اطلاعات ذخیره‌شده ناموفق بود، با پایگاه‌داده خالی شروع می‌شود.', e); }
+
+const JAL_FMT = new Intl.DateTimeFormat('en-US-u-ca-persian', { year: 'numeric', month: 'numeric', day: 'numeric' });
+const MONTHS = ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
+const STATUS_CLS = {'حاضر':'present','غایب':'absent','مرخصی':'leave','مأموریت':'mission','تاخیر':'late','نیمه‌وقت':'halfday'};
+// Statuses that represent actual worked time — performance level only makes sense for these.
+const LEVEL_REQUIRED_STATUSES = ['حاضر','تاخیر','نیمه‌وقت'];
+
+let today = getJalali(new Date());
+let calYear = today.jy, calMonth = today.jm;
+let currentPicked = null, pendingDate = '', pendingExisting = null;
+let editingEmployeeId = null;
+
+// ================== احراز هویت و ساختار نسخه مادر/دختر ==================
+const APP_CONFIG_DEFAULT = { role: 'master', id: 'master', username: '', passHash: '', salt: '', algo: '', keyB64: '', person: null, motherPhone: '', motherId: '', motherPubJwk: null, requireActivation: false, actSalt: '', activationHash: '' };
+function readEmbeddedConfig() {
+  try {
+    const el = document.getElementById('appConfig');
+    return Object.assign({}, APP_CONFIG_DEFAULT, JSON.parse(el.textContent || '{}'));
+  } catch (e) { return Object.assign({}, APP_CONFIG_DEFAULT); }
+}
+const EMBEDDED_CONFIG = readEmbeddedConfig();
+const IS_MASTER = EMBEDDED_CONFIG.role !== 'daughter';
+const INSTANCE_KEY_PREFIX = 'att_auth_' + (EMBEDDED_CONFIG.id || 'master') + '_';
+const DAUGHTERS_KEY = 'att_master_children_v1';
+
+function ensureSelfEmployee() {
+  if (IS_MASTER) return;
+  const p = EMBEDDED_CONFIG.person;
+  if (!p || !p.national) return;
+  if (!db.employees.some(e => e.national === p.national)) {
+    db.employees.push({ id: 'self', name: p.name, national: p.national, birth: '', phone: '' });
+    save();
+  }
+}
+ensureSelfEmployee();
+
+function lockDaughterToSelf() {
+  if (IS_MASTER) return;
+  const emp = db.employees.find(e => e.national === (EMBEDDED_CONFIG.person && EMBEDDED_CONFIG.person.national)) || db.employees[0];
+  if (!emp) return;
+  const attSel = document.getElementById('attEmployee');
+  const repSel = document.getElementById('repEmployee');
+  if (attSel) { attSel.value = emp.id; attSel.disabled = true; onEmployeeChange(); }
+  if (repSel) { repSel.value = emp.id; repSel.disabled = true; renderReport(); }
+}
+
+async function sha256Hex(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+function randomHex(n) {
+  const arr = new Uint8Array(n); crypto.getRandomValues(arr);
+  return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+function bytesToB64(bytes) { return btoa(String.fromCharCode(...bytes)); }
+function b64ToBytes(b64) { return Uint8Array.from(atob(b64), c => c.charCodeAt(0)); }
+
+// هش‌کردن رمز عبور با PBKDF2 (کند و مقاوم در برابر حدس گروهی/آفلاین)؛ جایگزین SHA-256 ساده قبلی.
+async function pbkdf2Hash(password, saltHex) {
+  const keyMaterial = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: new TextEncoder().encode(saltHex), iterations: 120000, hash: 'SHA-256' },
+    keyMaterial, 256
+  );
+  return Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+// برای سازگاری با حساب‌های ساخته‌شده در نسخه‌های قبلی (که با SHA-256 ساده هش شده بودند).
+async function verifyPassword(password, rec) {
+  if (rec.algo === 'pbkdf2') return (await pbkdf2Hash(password, rec.salt)) === rec.passHash;
+  return (await sha256Hex(password + rec.salt)) === rec.passHash;
+}
+// سیاست رمز عبور: حداقل ۸ کاراکتر و شامل حداقل یک حرف بزرگ و یک حرف کوچک انگلیسی.
+function passwordPolicyError(pw) {
+  if (!pw || pw.length < 8) return 'رمز عبور باید حداقل ۸ کاراکتر باشد';
+  if (!/[A-Z]/.test(pw)) return 'رمز عبور باید حداقل یک حرف بزرگ انگلیسی داشته باشد';
+  if (!/[a-z]/.test(pw)) return 'رمز عبور باید حداقل یک حرف کوچک انگلیسی داشته باشد';
+  return '';
+}
+
+function getAuthRecord() {
+  try {
+    const local = JSON.parse(localStorage.getItem(INSTANCE_KEY_PREFIX + 'cred'));
+    if (local && local.passHash) return Object.assign({ algo: 'sha256' }, local);
+  } catch (e) {}
+  if (EMBEDDED_CONFIG.passHash) return { username: EMBEDDED_CONFIG.username, passHash: EMBEDDED_CONFIG.passHash, salt: EMBEDDED_CONFIG.salt, algo: EMBEDDED_CONFIG.algo || 'sha256', adminPhone: '' };
+  return null;
+}
+
+// ---- محافظت در برابر حدس‌زنی مکرر رمز عبور از طریق همین فرم ورود ----
+function getLoginGuard() {
+  try { return Object.assign({ fails: 0, lockUntil: 0 }, JSON.parse(localStorage.getItem(INSTANCE_KEY_PREFIX + 'loginGuard'))); }
+  catch (e) { return { fails: 0, lockUntil: 0 }; }
+}
+function setLoginGuard(g) { try { localStorage.setItem(INSTANCE_KEY_PREFIX + 'loginGuard', JSON.stringify(g)); } catch (e) {} }
+function registerLoginFailure() {
+  const g = getLoginGuard();
+  g.fails = (g.fails || 0) + 1;
+  if (g.fails >= 5) g.lockUntil = Date.now() + Math.min(g.fails - 4, 10) * 30000;
+  setLoginGuard(g);
+}
+function clearLoginGuard() { setLoginGuard({ fails: 0, lockUntil: 0 }); }
+function loginLockRemainingSeconds() {
+  const rem = getLoginGuard().lockUntil - Date.now();
+  return rem > 0 ? Math.ceil(rem / 1000) : 0;
+}
+
+async function doLogin() {
+  const u = document.getElementById('loginUser').value.trim();
+  const p = document.getElementById('loginPass').value;
+  const err = document.getElementById('loginErr'); err.textContent = '';
+
+  const remain = loginLockRemainingSeconds();
+  if (remain > 0) { err.textContent = `به‌دلیل چند تلاش ناموفق، لطفاً ${remain} ثانیه دیگر دوباره امتحان کنید`; return; }
+  if (!u || !p) { err.textContent = 'نام کاربری و رمز عبور را وارد کنید'; return; }
+
+  const rec = getAuthRecord();
+  if (!rec) {
+    if (!IS_MASTER) { err.textContent = 'پیکربندی این نسخه نامعتبر است'; return; }
+    const policyErr = passwordPolicyError(p);
+    if (policyErr) { err.textContent = policyErr; return; }
+    const phone = document.getElementById('loginPhone').value.trim();
+    if (!phone) { err.textContent = 'شماره تماس مدیر را وارد کنید (برای اطلاع پرسنل نسخه‌های دختر استفاده می‌شود)'; return; }
+    const salt = randomHex(16);
+    const passHash = await pbkdf2Hash(p, salt);
+    localStorage.setItem(INSTANCE_KEY_PREFIX + 'cred', JSON.stringify({ username: u, passHash, salt, algo: 'pbkdf2', adminPhone: phone }));
+    clearLoginGuard();
+    sessionAuth();
+    return;
+  }
+
+  if (u !== rec.username || !(await verifyPassword(p, rec))) {
+    registerLoginFailure();
+    err.textContent = 'نام کاربری یا رمز عبور اشتباه است'; return;
+  }
+
+  // کد فعال‌سازی: برای نسخه‌های دختر که این قابلیت برایشان فعال شده، فقط اولین بار روی هر دستگاه/مرورگر لازم است.
+  if (!IS_MASTER && EMBEDDED_CONFIG.requireActivation && localStorage.getItem(INSTANCE_KEY_PREFIX + 'activated') !== '1') {
+    const code = (document.getElementById('loginActivation').value || '').trim();
+    if (!code) { document.getElementById('loginActivationField').style.display = ''; err.textContent = 'کد فعال‌سازی که مدیر به شما داده را هم وارد کنید'; return; }
+    if ((await sha256Hex(code + EMBEDDED_CONFIG.actSalt)) !== EMBEDDED_CONFIG.activationHash) {
+      registerLoginFailure();
+      err.textContent = 'کد فعال‌سازی درست نیست'; return;
+    }
+    try { localStorage.setItem(INSTANCE_KEY_PREFIX + 'activated', '1'); } catch (e) {}
+  }
+
+  // ارتقای خودکار حساب‌های قدیمی‌تر به هش امن‌تر PBKDF2، بدون نیاز به تغییر رمز عبور توسط کاربر.
+  if (rec.algo !== 'pbkdf2') {
+    const newSalt = randomHex(16);
+    const newHash = await pbkdf2Hash(p, newSalt);
+    const upgraded = { username: rec.username, passHash: newHash, salt: newSalt, algo: 'pbkdf2' };
+    if (rec.adminPhone) upgraded.adminPhone = rec.adminPhone;
+    try { localStorage.setItem(INSTANCE_KEY_PREFIX + 'cred', JSON.stringify(upgraded)); } catch (e) {}
+  }
+
+  clearLoginGuard();
+  sessionAuth();
+}
+
+function sessionAuth() {
+  sessionStorage.setItem(INSTANCE_KEY_PREFIX + 'authed', '1');
+  showApp();
+}
+
+function showApp() {
+  document.getElementById('loginScreen').classList.add('hidden');
+  document.getElementById('appRoot').classList.add('show');
+  document.getElementById('daughtersNavBtn').style.display = IS_MASTER ? '' : 'none';
+  document.getElementById('employeesNavBtn').style.display = IS_MASTER ? '' : 'none';
+  renderAll();
+  if (IS_MASTER) renderDaughters();
+  else lockDaughterToSelf();
+}
+
+function checkAuthOnLoad() {
+  const rec = getAuthRecord();
+  const submitBtn = document.getElementById('loginSubmitBtn');
+  const phoneField = document.getElementById('loginPhoneField');
+  const createBtn = document.getElementById('createAccountBtn');
+  const activationField = document.getElementById('loginActivationField');
+
+  if (!IS_MASTER && createBtn) createBtn.style.display = '';
+
+  if (!rec && IS_MASTER) {
+    document.getElementById('firstRunNote').style.display = 'block';
+    document.getElementById('loginSubtitle').textContent = 'اولین اجرا: یک نام کاربری، رمز عبور و شماره تماس برای مدیر تعیین کنید';
+    if (submitBtn) submitBtn.textContent = 'ایجاد کاربر';
+    if (phoneField) phoneField.style.display = '';
+  }
+  if (!IS_MASTER && EMBEDDED_CONFIG.requireActivation && localStorage.getItem(INSTANCE_KEY_PREFIX + 'activated') !== '1' && activationField) {
+    activationField.style.display = '';
+  }
+  if (rec && sessionStorage.getItem(INSTANCE_KEY_PREFIX + 'authed') === '1') showApp();
+}
+
+// در فایل‌های دختر، امکان «ایجاد» حساب کاربری جدید وجود ندارد؛ فقط پیام تماس با ادمین (همراه شماره تماس مادرِ ایجادکننده) نمایش داده می‌شود.
+function handleCreateAccountClick() {
+  if (IS_MASTER) return;
+  const phone = EMBEDDED_CONFIG.motherPhone;
+  alert('ساخت حساب کاربری جدید از همین‌جا ممکن نیست؛ کافی است با مدیر سیستم تماس بگیرید' + (phone ? ('.\nشماره تماس مدیر: ' + phone) : '.'));
+}
+
+// شناسه ثابت همین نسخه مادر (روی همین مرورگر)، برای ممیزی/تگ‌گذاری ارتباط فایل مادر با فایل‌های دختر.
+function getOrCreateMasterId() {
+  const KEY = 'att_master_self_id';
+  let id = null;
+  try { id = localStorage.getItem(KEY); } catch (e) {}
+  if (!id) { id = 'm_' + randomHex(8); try { localStorage.setItem(KEY, id); } catch (e) {} }
+  return id;
+}
+
+// جفت‌کلید RSA همین مادر (فقط یک‌بار ساخته می‌شود و کلید خصوصی هرگز از این مرورگر خارج نمی‌شود؛
+// فقط کلید عمومی در فایل‌های دختر جاسازی می‌شود تا خروجی رمزشده‌شان را فقط همین مادر بتواند باز کند).
+async function getOrCreateMasterKeypair() {
+  const KEY = 'att_master_rsa_keys';
+  try {
+    const stored = JSON.parse(localStorage.getItem(KEY));
+    if (stored && stored.publicJwk && stored.privateJwk) return stored;
+  } catch (e) {}
+  const pair = await crypto.subtle.generateKey(
+    { name: 'RSA-OAEP', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
+    true, ['encrypt', 'decrypt']
+  );
+  const publicJwk = await crypto.subtle.exportKey('jwk', pair.publicKey);
+  const privateJwk = await crypto.subtle.exportKey('jwk', pair.privateKey);
+  const rec = { publicJwk, privateJwk };
+  try { localStorage.setItem(KEY, JSON.stringify(rec)); } catch (e) {}
+  return rec;
+}
+
+// شماره تماس مدیر را برمی‌گرداند؛ اگر (برای نسخه‌های قدیمی‌تر که هنوز شماره ثبت نشده) موجود نباشد، یک‌بار آن را می‌پرسد و ذخیره می‌کند.
+function ensureAdminPhone() {
+  let cred = null;
+  try { cred = JSON.parse(localStorage.getItem(INSTANCE_KEY_PREFIX + 'cred')); } catch (e) {}
+  if (cred && cred.adminPhone) return cred.adminPhone;
+  const phone = prompt('برای اطلاع پرسنلِ نسخه‌های دختر، شماره تماس مدیر را وارد کنید:');
+  if (phone && phone.trim() && cred) {
+    cred.adminPhone = phone.trim();
+    try { localStorage.setItem(INSTANCE_KEY_PREFIX + 'cred', JSON.stringify(cred)); } catch (e) {}
+    return cred.adminPhone;
+  }
+  return (phone && phone.trim()) || '';
+}
+
+function generateActivationCode() {
+  const n = new Uint32Array(1); crypto.getRandomValues(n);
+  return String(100000 + (n[0] % 900000));
+}
+
+// ================== پروفایل کاربری ==================
+function renderProfile() {
+  const rec = getAuthRecord();
+  const uname = (rec && rec.username) || EMBEDDED_CONFIG.username || '';
+  const userEl = document.getElementById('profileUsername');
+  if (userEl) userEl.value = uname;
+
+  const sideProfile = document.getElementById('sidebarProfile');
+  if (sideProfile) sideProfile.textContent = uname ? uname.trim().charAt(0).toUpperCase() : '👤';
+
+  const label = document.getElementById('profilePhoneLabel');
+  const phoneInput = document.getElementById('profilePhone');
+  const saveBtn = document.getElementById('profilePhoneSaveBtn');
+  if (IS_MASTER) {
+    if (label) label.textContent = 'شماره تماس مدیر';
+    if (phoneInput) { phoneInput.disabled = false; phoneInput.value = (rec && rec.adminPhone) || ''; }
+    if (saveBtn) saveBtn.style.display = '';
+  } else {
+    if (label) label.textContent = 'شماره تماس مدیر (برای پشتیبانی)';
+    if (phoneInput) { phoneInput.disabled = true; phoneInput.value = EMBEDDED_CONFIG.motherPhone || ''; }
+    if (saveBtn) saveBtn.style.display = 'none';
+  }
+}
+
+function saveAdminPhone() {
+  if (!IS_MASTER) return;
+  const errEl = document.getElementById('profileErr'), okEl = document.getElementById('profileOk');
+  errEl.textContent = ''; okEl.textContent = '';
+  const rec = getAuthRecord();
+  if (!rec) { errEl.textContent = 'اطلاعات ورود یافت نشد'; return; }
+  const phone = document.getElementById('profilePhone').value.trim();
+  if (!phone) { errEl.textContent = 'شماره تماس نمی‌تواند خالی باشد'; return; }
+  const cred = { username: rec.username, passHash: rec.passHash, salt: rec.salt, adminPhone: phone };
+  localStorage.setItem(INSTANCE_KEY_PREFIX + 'cred', JSON.stringify(cred));
+  okEl.textContent = 'شماره تماس ذخیره شد.';
+}
+
+async function changePassword() {
+  const errEl = document.getElementById('profileErr'), okEl = document.getElementById('profileOk');
+  errEl.textContent = ''; okEl.textContent = '';
+  const cur = document.getElementById('curPass').value;
+  const n1 = document.getElementById('newPass').value;
+  const n2 = document.getElementById('newPass2').value;
+  const rec = getAuthRecord();
+  if (!rec) { errEl.textContent = 'اطلاعات ورود یافت نشد'; return; }
+  if (!cur || !n1 || !n2) { errEl.textContent = 'همه فیلدها را پر کنید'; return; }
+  if (!(await verifyPassword(cur, rec))) { errEl.textContent = 'رمز عبور فعلی درست نیست'; return; }
+  const policyErr = passwordPolicyError(n1);
+  if (policyErr) { errEl.textContent = policyErr; return; }
+  if (n1 !== n2) { errEl.textContent = 'تکرار رمز عبور جدید مطابقت ندارد'; return; }
+  const salt = randomHex(16);
+  const passHash = await pbkdf2Hash(n1, salt);
+  const cred = { username: rec.username, passHash, salt, algo: 'pbkdf2' };
+  if (rec.adminPhone) cred.adminPhone = rec.adminPhone;
+  localStorage.setItem(INSTANCE_KEY_PREFIX + 'cred', JSON.stringify(cred));
+  document.getElementById('curPass').value = '';
+  document.getElementById('newPass').value = '';
+  document.getElementById('newPass2').value = '';
+  okEl.textContent = 'رمز عبور با موفقیت تغییر کرد.';
+}
+
+function logout() {
+  sessionStorage.removeItem(INSTANCE_KEY_PREFIX + 'authed');
+  document.getElementById('appRoot').classList.remove('show');
+  document.getElementById('loginScreen').classList.remove('hidden');
+  document.getElementById('loginUser').value = '';
+  document.getElementById('loginPass').value = '';
+  document.getElementById('loginErr').textContent = '';
+}
+
+// ================== تم روز/شب ==================
+function applyTheme(t) {
+  document.documentElement.setAttribute('data-theme', t);
+  const btn = document.getElementById('themeToggleBtn');
+  if (btn) btn.textContent = t === 'dark' ? '☀️' : '🌙';
+  const meta = document.getElementById('themeColorMeta');
+  if (meta) meta.setAttribute('content', t === 'dark' ? '#7a1030' : '#ff3b5c');
+  try { localStorage.setItem('att_theme', t); } catch (e) {}
+}
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  applyTheme(cur === 'dark' ? 'light' : 'dark');
+}
+function initTheme() {
+  let t = 'light';
+  try {
+    t = localStorage.getItem('att_theme') || ((window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light');
+  } catch (e) {}
+  applyTheme(t);
+}
+initTheme();
+
+// ---- رمزنگاری خروجی نسخه‌های دختر (AES-GCM، کاملاً محلی/آفلاین) ----
+async function importAesKey(keyB64) {
+  return crypto.subtle.importKey('raw', b64ToBytes(keyB64), { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+}
+async function encryptBytes(bytes, keyB64) {
+  const key = await importAesKey(keyB64);
+  const iv = new Uint8Array(12); crypto.getRandomValues(iv);
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, bytes);
+  return { ivB64: bytesToB64(iv), dataB64: bytesToB64(new Uint8Array(ct)) };
+}
+async function decryptBytes(ivB64, dataB64, keyB64) {
+  const key = await importAesKey(keyB64);
+  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64ToBytes(ivB64) }, key, b64ToBytes(dataB64));
+  return new Uint8Array(pt);
+}
+
+// ---- رمزنگاری ترکیبی جدید (RSA-OAEP + AES-GCM) ----
+// فایل دختر فقط کلید عمومی مادر را دارد؛ یعنی می‌تواند رمز کند اما هرگز نمی‌تواند رمزگشایی کند.
+// فقط کلید خصوصیِ همان مرورگرِ مادر که این کلیدها را ساخته، می‌تواند خروجی را باز کند.
+async function encryptForMother(bytes, motherPubJwk) {
+  const pubKey = await crypto.subtle.importKey('jwk', motherPubJwk, { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['encrypt']);
+  const rawKey = new Uint8Array(32); crypto.getRandomValues(rawKey);
+  const aesKey = await crypto.subtle.importKey('raw', rawKey, { name: 'AES-GCM' }, false, ['encrypt']);
+  const iv = new Uint8Array(12); crypto.getRandomValues(iv);
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, bytes);
+  const wrappedKey = await crypto.subtle.encrypt({ name: 'RSA-OAEP' }, pubKey, rawKey);
+  return { ivB64: bytesToB64(iv), dataB64: bytesToB64(new Uint8Array(ct)), wrappedKeyB64: bytesToB64(new Uint8Array(wrappedKey)) };
+}
+async function decryptFromDaughter(ivB64, dataB64, wrappedKeyB64, privateJwk) {
+  const privKey = await crypto.subtle.importKey('jwk', privateJwk, { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['decrypt']);
+  const rawKey = new Uint8Array(await crypto.subtle.decrypt({ name: 'RSA-OAEP' }, privKey, b64ToBytes(wrappedKeyB64)));
+  const aesKey = await crypto.subtle.importKey('raw', rawKey, { name: 'AES-GCM' }, false, ['decrypt']);
+  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64ToBytes(ivB64) }, aesKey, b64ToBytes(dataB64));
+  return new Uint8Array(pt);
+}
+
+// ---- مدیریت نسخه‌های دختر (فقط در نسخه مادر) ----
+function loadDaughters() { try { return JSON.parse(localStorage.getItem(DAUGHTERS_KEY)) || []; } catch (e) { return []; } }
+function saveDaughters(list) { localStorage.setItem(DAUGHTERS_KEY, JSON.stringify(list)); }
+
+function renderDaughters() {
+  if (!IS_MASTER) return;
+  const body = document.getElementById('daughterBody'); if (!body) return;
+  const list = loadDaughters();
+  body.innerHTML = list.length ? '' : '<tr><td colspan="7">هنوز نسخه‌ای ایجاد نشده است</td></tr>';
+  list.forEach((d, i) => {
+    const codeCell = d.activationCode
+      ? `<button type="button" class="btn ghost" onclick="alert('کد فعال‌سازی ${escapeHtml(d.name||d.username)}: ${escapeHtml(d.activationCode)}')">نمایش کد</button>`
+      : '-';
+    body.innerHTML += `<tr><td>${i+1}</td><td>${escapeHtml(d.name||'')}</td><td>${escapeHtml(d.national||'')}</td><td>${escapeHtml(d.username)}</td><td>${codeCell}</td><td>${escapeHtml(d.createdAt)}</td><td><button type="button" class="btn danger" onclick="deleteDaughter('${d.id}')">حذف</button></td></tr>`;
+  });
+}
+function deleteDaughter(id) {
+  if (!confirm('با حذف این ردیف، دیگر نمی‌توانید فایل‌های ارسالی این فرد را رمزگشایی کنید. حذف شود؟')) return;
+  saveDaughters(loadDaughters().filter(d => d.id !== id));
+  renderDaughters();
+}
+
+function buildDaughterHtml(config) {
+  const clone = document.documentElement.cloneNode(true);
+  ['employeeBody', 'recordsBody', 'reportBody', 'dashBody', 'days', 'daughterBody'].forEach(id => {
+    const el = clone.querySelector('#' + id); if (el) el.innerHTML = '';
+  });
+  ['attEmployee', 'repEmployee'].forEach(id => {
+    const el = clone.querySelector('#' + id); if (el) el.innerHTML = '<option value="">انتخاب...</option>';
+  });
+  const cfgEl = clone.querySelector('#appConfig');
+  if (cfgEl) cfgEl.textContent = JSON.stringify(config);
+  const loginEl = clone.querySelector('#loginScreen'); if (loginEl) loginEl.classList.remove('hidden');
+  const rootEl = clone.querySelector('#appRoot'); if (rootEl) rootEl.classList.remove('show');
+  return '<!doctype html>\n' + clone.outerHTML;
+}
+
+async function createDaughterFile() {
+  const errEl = document.getElementById('dErr'); errEl.textContent = '';
+  if (!IS_MASTER) { errEl.textContent = 'فقط نسخه مادر می‌تواند نسخه جدید بسازد'; return; }
+  const first = document.getElementById('dFirst').value.trim();
+  const last = document.getElementById('dLast').value.trim();
+  const national = document.getElementById('dNational').value.trim();
+  const username = document.getElementById('dUser').value.trim();
+  const password = document.getElementById('dPass').value;
+  if (!first || !last) { errEl.textContent = 'نام و نام خانوادگی را وارد کنید'; return; }
+  if (!/^\d{10}$/.test(national)) { errEl.textContent = 'کد ملی باید دقیقاً ۱۰ رقم عددی باشد'; return; }
+  if (!username || !password) { errEl.textContent = 'نام کاربری و رمز عبور را وارد کنید'; return; }
+  const policyErr = passwordPolicyError(password);
+  if (policyErr) { errEl.textContent = policyErr; return; }
+  if (loadDaughters().some(d => d.national === national)) { errEl.textContent = 'برای این کد ملی قبلاً یک نسخه ساخته شده است'; return; }
+
+  const fullName = `${first} ${last}`.trim();
+
+  // این فرد را به لیست پرسنل همین نسخه مادر هم اضافه (یا در صورت وجود، به‌روزرسانی) می‌کند
+  // تا بعداً گزارش رسیده از او قابل ادغام باشد.
+  const existingIdx = db.employees.findIndex(x => x.national === national);
+  if (existingIdx > -1) db.employees[existingIdx] = { ...db.employees[existingIdx], name: fullName, national };
+  else db.employees.push({ id: Date.now().toString(), name: fullName, national, birth: '', phone: '' });
+  save();
+
+  const motherPhone = ensureAdminPhone();
+  if (!motherPhone) { errEl.textContent = 'برای ادامه باید شماره تماس مدیر ثبت شود'; return; }
+  const motherId = getOrCreateMasterId();
+  const motherKeys = await getOrCreateMasterKeypair();
+
+  const id = 'd_' + Date.now().toString(36) + '_' + randomHex(4);
+  const salt = randomHex(16);
+  const passHash = await pbkdf2Hash(password, salt);
+
+  // کد فعال‌سازی: جدا از رمز عبور، فقط یک‌بار روی اولین گوشی/مرورگری که با آن وارد می‌شود لازم است.
+  // این کد را باید خودتان (نه از طریق همین فایل) به فرد اطلاع دهید، مثلاً تلفنی یا پیامکی.
+  const activationCode = generateActivationCode();
+  const actSalt = randomHex(8);
+  const activationHash = await sha256Hex(activationCode + actSalt);
+
+  const config = {
+    role: 'daughter', id, username, passHash, salt, algo: 'pbkdf2',
+    person: { name: fullName, national }, motherPhone, motherId,
+    motherPubJwk: motherKeys.publicJwk,
+    requireActivation: true, actSalt, activationHash
+  };
+  const html = buildDaughterHtml(config);
+  const blob = new Blob([html], { type: 'text/html' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `Attendance_${fullName.replace(/[^\w\u0600-\u06FF-]+/g, '_')}.html`;
+  document.body.appendChild(a); a.click(); a.remove();
+
+  const list = loadDaughters();
+  list.push({ id, name: fullName, national, username, activationCode, motherId, createdAt: new Date().toLocaleString('fa-IR') });
+  saveDaughters(list);
+  renderDaughters(); renderAll();
+  document.getElementById('dFirst').value = ''; document.getElementById('dLast').value = ''; document.getElementById('dNational').value = '';
+  document.getElementById('dUser').value = ''; document.getElementById('dPass').value = '';
+  alert(`فایل اختصاصی این فرد آماده شد. همین فایل را می‌توانید برایش ارسال کنید.\n\nکد فعال‌سازی: ${activationCode}\nاین کد را جدا از فایل (مثلاً تلفنی) به او بگویید؛ فقط بار اول که با گوشی یا مرورگر خودش وارد می‌شود لازم است. این کد را هر وقت خواستید از لیست نسخه‌های ایجادشده هم می‌توانید دوباره ببینید.`);
+}
+
+async function importDaughterFile(e) {
+  if (!IS_MASTER) { alert('فقط نسخه مادر می‌تواند این فایل‌ها را رمزگشایی کند'); e.target.value = ''; return; }
+  if (!xlsxReady()) { e.target.value = ''; return; }
+  const file = e.target.files[0]; if (!file) return;
+  try {
+    const text = await file.text();
+    const payload = JSON.parse(text);
+    if (payload.app !== 'attendance-secure-export') throw new Error('این فایل، خروجی معتبر یک نسخه دختر نیست');
+    const d = loadDaughters().find(x => x.id === payload.daughterId);
+    if (!d) throw new Error('این فایل متعلق به نسخه‌ای است که در لیست نسخه‌های این نسخه مادر ثبت نشده یا حذف شده است');
+
+    let plainBytes;
+    if (payload.wrappedKey) {
+      const motherKeys = await getOrCreateMasterKeypair();
+      plainBytes = await decryptFromDaughter(payload.iv, payload.data, payload.wrappedKey, motherKeys.privateJwk);
+    } else if (d.keyB64) {
+      // سازگاری با خروجی‌های قدیمی‌تر که با کلید متقارن رمز شده بودند
+      plainBytes = await decryptBytes(payload.iv, payload.data, d.keyB64);
+    } else {
+      throw new Error('کلید رمزگشایی این فایل در این مرورگر یافت نشد');
+    }
+
+    const wb = XLSX.read(plainBytes, { type: 'array' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
+    const { added, updated, skipped, problems } = mergeAttendanceRows(rows);
+    save(); renderAll();
+
+    const blob = new Blob([plainBytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `Decrypted_${d.username}_${Date.now()}.xlsx`;
+    document.body.appendChild(a); a.click(); a.remove();
+
+    let msg = `رمزگشایی و ادغام با موفقیت انجام شد (${d.name || d.username}).\nافزوده‌شده: ${added}\nبه‌روزرسانی‌شده: ${updated}\nنادیده‌گرفته‌شده: ${skipped}`;
+    if (problems.length) msg += `\n\nجزئیات:\n${problems.slice(0, 10).join('\n')}` + (problems.length > 10 ? `\n... و ${problems.length - 10} مورد دیگر` : '');
+    alert(msg);
+  } catch (err) {
+    alert('خواندن/رمزگشایی فایل ناموفق بود: ' + err.message);
+  } finally { e.target.value = ''; }
+}
+
+function save() {
+  try { localStorage.setItem(DB_KEY, JSON.stringify(db)); }
+  catch (e) { alert('ذخیره اطلاعات ناموفق بود (حافظه مرورگر پر است یا در دسترس نیست).'); console.error(e); }
+}
+function getJalali(date) {
+  const p = JAL_FMT.formatToParts(date);
+  const o = {};
+  p.forEach(x => {
+    if (x.type === 'year') o.jy = +x.value;
+    else if (x.type === 'month') o.jm = +x.value;
+    else if (x.type === 'day') o.jd = +x.value;
+    // other parts (era, literal, ...) are ignored on purpose — some browsers add an
+    // 'era' part after year/day which was previously overwriting the day value.
+  });
+  return o;
+}
+function jalaliToGreg(jy, jm, jd) {
+  let lo = new Date(jy+620, 0, 1), hi = new Date(jy+623, 11, 31);
+  const target = jy*372+jm*31+jd;
+  while(lo<hi){
+    let mid = new Date(lo.getTime() + Math.floor((hi-lo)/2/86400000)*86400000);
+    let j = getJalali(mid); if(j.jy*372+j.jm*31+j.jd < target) lo = new Date(mid.getTime()+86400000); else hi = mid;
+  }
+  return lo;
+}
+function monthDays(y, m) { return Math.round((jalaliToGreg(m===12?y+1:y, m===12?1:m+1, 1) - jalaliToGreg(y,m,1))/86400000); }
+function isFriday(y, m, d) { return (jalaliToGreg(y,m,d).getDay() + 1) % 7 === 6; }
+function pad(n) { n = String(n); return n.length >= 2 ? n : ('0' + n); }
+function orEmpty(v) { return (v === null || v === undefined) ? '' : v; }
+
+const TAB_TITLES = {
+  attendance: 'ثبت حضور', employees: 'پرسنل', report: 'گزارش ماهانه',
+  dashboard: 'داشبورد', daughters: 'ایجاد نسخه برای پرسنل', profile: 'پروفایل'
+};
+function showTab(id, btn) {
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelectorAll('.menu button').forEach(x => x.classList.remove('active'));
+  btn.classList.add('active');
+  const titleBar = document.getElementById('sectionTitleBar');
+  if (titleBar) titleBar.textContent = TAB_TITLES[id] || '';
+  renderAll();
+}
+
+function renderAll() {
+  const empOpts = '<option value="">انتخاب...</option>' + db.employees.map(e => `<option value="${e.id}">${escapeHtml(e.name)}</option>`).join('');
+  const prevAtt = document.getElementById('attEmployee').value;
+  const prevRep = document.getElementById('repEmployee').value;
+  document.getElementById('attEmployee').innerHTML = empOpts;
+  document.getElementById('repEmployee').innerHTML = empOpts;
+  if (db.employees.some(e => e.id === prevAtt)) document.getElementById('attEmployee').value = prevAtt;
+  if (db.employees.some(e => e.id === prevRep)) document.getElementById('repEmployee').value = prevRep;
+
+  let mOpts = ''; MONTHS.forEach((m,i) => mOpts += `<option value="${i+1}">${m}</option>`);
+  document.getElementById('attMonth').innerHTML = mOpts;
+  document.getElementById('repMonth').innerHTML = mOpts;
+  document.getElementById('attMonth').value = calMonth;
+  document.getElementById('attYear').value = calYear;
+  if (!document.getElementById('repMonth').value) document.getElementById('repMonth').value = today.jm;
+  if (!document.getElementById('repYear').value) document.getElementById('repYear').value = today.jy;
+
+  renderCalendar(); renderRecords(); renderEmployees(); renderReport(); renderDashboard(); renderProfile();
+}
+
+function escapeHtml(s) {
+  return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function(c) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; });
+}
+
+function renderCalendar() {
+  document.getElementById('calTitle').textContent = `${MONTHS[calMonth-1]} ${calYear}`;
+  const grid = document.getElementById('days'); grid.innerHTML = '';
+  const emp = document.getElementById('attEmployee').value;
+  const first = (jalaliToGreg(calYear, calMonth, 1).getDay()+1)%7;
+  const total = monthDays(calYear, calMonth);
+
+  for(let i=0; i<first; i++) grid.appendChild(document.createElement('div'));
+  for(let d=1; d<=total; d++) {
+    const key = `${calYear}/${pad(calMonth)}/${pad(d)}`;
+    const r = db.records.find(x => x.employeeId===emp && x.date===key);
+    const div = document.createElement('div');
+    div.className = 'day ' + (r ? STATUS_CLS[r.status] : (isFriday(calYear,calMonth,d)?'weekend':''));
+    if(calYear===today.jy && calMonth===today.jm && d===today.jd) div.classList.add('today');
+    div.innerHTML = `<b>${d}</b><br><small>${r ? (escapeHtml(r.status) + (r.level?' (س'+r.level+')':'')) : ''}</small>`;
+    div.onclick = () => openModal(key, r);
+    grid.appendChild(div);
+  }
+}
+
+function goToday() { calYear = today.jy; calMonth = today.jm; renderAll(); }
+
+function openModal(date, r) {
+  if(!document.getElementById('attEmployee').value) return alert('اول پرسنل را انتخاب کنید');
+  pendingDate = date; pendingExisting = r; currentPicked = r ? r.status : null;
+  document.getElementById('modalErr').textContent = '';
+  document.getElementById('modalDateText').textContent = date;
+  document.getElementById('modalLevel').value = (r && r.level) || '';
+  document.getElementById('modalIn').value = (r && r.inn) || '';
+  document.getElementById('modalOut').value = (r && r.out) || '';
+  document.getElementById('modalNote').value = (r && r.note) || '';
+  document.querySelectorAll('#statusGrid button').forEach(b => b.classList.toggle('picked', b.dataset.s===currentPicked));
+  updateLevelHint();
+  document.getElementById('modalDeleteBtn').style.display = r ? 'block' : 'none';
+  document.getElementById('statusModal').style.display = 'flex';
+}
+
+function pickStatus(s) {
+  currentPicked = s;
+  document.querySelectorAll('#statusGrid button').forEach(b => b.classList.toggle('picked', b.dataset.s===s));
+  updateLevelHint();
+}
+
+function updateLevelHint() {
+  const required = LEVEL_REQUIRED_STATUSES.includes(currentPicked);
+  document.getElementById('modalLevelHint').textContent = required ? '(الزامی)' : '(اختیاری برای این وضعیت)';
+}
+
+function saveModal() {
+  const err = document.getElementById('modalErr');
+  if(!currentPicked) { err.textContent = 'وضعیت را انتخاب کنید'; return; }
+  const emp = document.getElementById('attEmployee').value;
+  const level = document.getElementById('modalLevel').value;
+  if(LEVEL_REQUIRED_STATUSES.includes(currentPicked) && !level) { err.textContent = 'لطفاً سطح کارایی را انتخاب کنید'; return; }
+  const inn = document.getElementById('modalIn').value, out = document.getElementById('modalOut').value;
+  if(inn && out && out <= inn) { err.textContent = 'ساعت خروج باید بعد از ساعت ورود باشد'; return; }
+
+  db.records = db.records.filter(x => !(x.employeeId===emp && x.date===pendingDate));
+  db.records.push({
+    employeeId: emp, date: pendingDate, status: currentPicked, level: LEVEL_REQUIRED_STATUSES.includes(currentPicked) ? level : (level || ''),
+    inn, out,
+    note: document.getElementById('modalNote').value
+  });
+  save(); closeStatusModal(); renderAll();
+}
+
+function deleteModalRecord() {
+  const emp = document.getElementById('attEmployee').value;
+  db.records = db.records.filter(x => !(x.employeeId===emp && x.date===pendingDate));
+  save(); closeStatusModal(); renderAll();
+}
+
+function closeStatusModal() { document.getElementById('statusModal').style.display = 'none'; }
+
+function addEmployee() {
+  const errEl = document.getElementById('empErr');
+  errEl.textContent = '';
+  const name = document.getElementById('eName').value.trim();
+  const nat = document.getElementById('eNational').value.trim();
+
+  if(!name) return errEl.textContent = 'نام را وارد کنید';
+  if(!/^\d{10}$/.test(nat)) return errEl.textContent = 'کد ملی باید دقیقاً ۱۰ رقم عددی باشد';
+  const dup = db.employees.find(e => e.national === nat && e.id !== editingEmployeeId);
+  if(dup) return errEl.textContent = 'پرسنلی با این کد ملی قبلاً ثبت شده است';
+
+  const data = { name, national: nat, birth: document.getElementById('eBirth').value.trim(), phone: document.getElementById('ePhone').value.trim() };
+
+  if(editingEmployeeId) {
+    const idx = db.employees.findIndex(e => e.id === editingEmployeeId);
+    if(idx > -1) db.employees[idx] = { ...db.employees[idx], ...data };
+    cancelEditEmployee();
+  } else {
+    db.employees.push({ id: Date.now().toString(), ...data });
+    clearEmployeeForm();
+  }
+  save(); renderAll();
+}
+
+function clearEmployeeForm() {
+  document.getElementById('eName').value = '';
+  document.getElementById('eNational').value = '';
+  document.getElementById('eBirth').value = '';
+  document.getElementById('ePhone').value = '';
+}
+
+function downloadEmployeeTemplate() {
+  if(!xlsxReady()) return;
+  const aoa = [
+    ['راهنما: ردیف‌های خالی زیر را با اطلاعات پرسنل جدید پر کنید. کد ملی باید دقیقاً ۱۰ رقم باشد. تاریخ تولد به فرمت شمسی مثل 1370/01/01 وارد شود.', '', '', ''],
+    ['نام و نام خانوادگی', 'کد ملی', 'تولد (شمسی)', 'تماس'],
+    ['نمونه: علی رضایی', '1234567890', '1370/01/15', '09121234567']
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!merges'] = [{ s:{r:0,c:0}, e:{r:0,c:3} }];
+  ws['!cols'] = [{wch:24},{wch:16},{wch:16},{wch:16}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'پرسنل');
+  XLSX.writeFile(wb, 'Employee_Import_Template.xls', { bookType: 'biff8' });
+}
+
+function importEmployees(e) {
+  if(!xlsxReady()) { e.target.value=''; return; }
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
+      if(!raw.length) throw new Error('فایل خالی است یا ستونی پیدا نشد');
+
+      // پیدا کردن سطر عنوان‌ها (سطری که شامل ستون «کد ملی» است)، صرف‌نظر از سطر راهنما در بالای فایل
+      let headerRowIdx = -1, headers = [];
+      for(let i=0; i<raw.length; i++) {
+        const cells = raw[i].map(x => String(orEmpty(x)).trim());
+        if(cells.indexOf('کد ملی') > -1) { headerRowIdx = i; headers = cells; break; }
+      }
+      if(headerRowIdx === -1) throw new Error('ستون «کد ملی» در فایل پیدا نشد. لطفاً از دکمه «دانلود فایل نمونه» استفاده کنید.');
+
+      const nameIdx = headers.indexOf('نام و نام خانوادگی');
+      const natIdx = headers.indexOf('کد ملی');
+      const birthIdx = headers.findIndex(h => h.indexOf('تولد') > -1);
+      const phoneIdx = headers.indexOf('تماس');
+      if(nameIdx === -1) throw new Error('ستون «نام و نام خانوادگی» پیدا نشد. لطفاً از فایل نمونه استفاده کنید.');
+
+      let added = 0, updated = 0, skipped = 0;
+      const problems = [];
+
+      for(let i = headerRowIdx + 1; i < raw.length; i++) {
+        const row = raw[i];
+        const rowNum = i + 1;
+        const name = String(orEmpty(row[nameIdx])).trim();
+        const national = String(orEmpty(row[natIdx])).trim();
+        const birth = birthIdx > -1 ? String(orEmpty(row[birthIdx])).trim() : '';
+        const phone = phoneIdx > -1 ? String(orEmpty(row[phoneIdx])).trim() : '';
+
+        if(!name && !national) continue; // ردیف کاملاً خالی
+        if(name.indexOf('نمونه:') === 0) continue; // ردیف نمونه فایل الگو
+
+        if(!name) { skipped++; problems.push(`ردیف ${rowNum}: نام خالی است`); continue; }
+        if(!/^\d{10}$/.test(national)) { skipped++; problems.push(`ردیف ${rowNum}: کد ملی باید دقیقاً ۱۰ رقم عددی باشد`); continue; }
+
+        const existingIdx = db.employees.findIndex(x => x.national === national);
+        if(existingIdx > -1) {
+          db.employees[existingIdx] = { ...db.employees[existingIdx], name, birth, phone };
+          updated++;
+        } else {
+          db.employees.push({ id: Date.now().toString() + '_' + i, name, national, birth, phone });
+          added++;
+        }
+      }
+
+      save(); renderAll();
+      let msg = `وارد کردن پرسنل کامل شد.\nافزوده‌شده: ${added}\nبه‌روزرسانی‌شده: ${updated}\nنادیده‌گرفته‌شده: ${skipped}`;
+      if(problems.length) msg += `\n\nجزئیات موارد نادیده‌گرفته‌شده:\n${problems.slice(0,10).join('\n')}` + (problems.length > 10 ? `\n... و ${problems.length - 10} مورد دیگر` : '');
+      alert(msg);
+    } catch(err) {
+      alert('خواندن فایل اکسل ناموفق بود: ' + err.message);
+    } finally {
+      e.target.value = '';
+    }
+  };
+  reader.onerror = () => alert('خواندن فایل ناموفق بود');
+  reader.readAsArrayBuffer(file);
+}
+
+function editEmployee(id) {
+  const e = db.employees.find(x => x.id === id);
+  if(!e) return;
+  editingEmployeeId = id;
+  document.getElementById('eName').value = e.name;
+  document.getElementById('eNational').value = e.national;
+  document.getElementById('eBirth').value = e.birth || '';
+  document.getElementById('ePhone').value = e.phone || '';
+  document.getElementById('empFormTitle').textContent = 'ویرایش پرسنل';
+  document.getElementById('empSaveBtn').textContent = 'ذخیره ویرایش';
+  document.getElementById('empCancelBtn').style.display = 'inline-block';
+  document.getElementById('empErr').textContent = '';
+  document.getElementById('eName').scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+function cancelEditEmployee() {
+  editingEmployeeId = null;
+  clearEmployeeForm();
+  document.getElementById('empFormTitle').textContent = 'افزودن پرسنل جدید';
+  document.getElementById('empSaveBtn').textContent = 'افزودن';
+  document.getElementById('empCancelBtn').style.display = 'none';
+  document.getElementById('empErr').textContent = '';
+}
+
+function delEmployee(id) {
+  if(confirm('حذف این پرسنل و همه ثبت‌های حضور او انجام شود؟')) {
+    db.employees = db.employees.filter(x=>x.id!==id);
+    db.records = db.records.filter(x=>x.employeeId!==id);
+    if(editingEmployeeId === id) cancelEditEmployee();
+    save(); renderAll();
+  }
+}
+
+function renderEmployees() {
+  const body = document.getElementById('employeeBody');
+  body.innerHTML = '';
+  if(!db.employees.length) {
+    body.innerHTML = '<tr><td colspan="6">هنوز پرسنل ثبت نشده است</td></tr>';
+    return;
+  }
+  db.employees.forEach((e, i) => {
+    body.innerHTML += `<tr><td>${i+1}</td><td>${escapeHtml(e.name)}</td><td>${escapeHtml(e.national)}</td><td>${escapeHtml(e.birth)}</td><td>${escapeHtml(e.phone)}</td>
+      <td><button type="button" class="btn ghost" onclick="editEmployee('${e.id}')">ویرایش</button>
+      <button type="button" class="btn danger" onclick="delEmployee('${e.id}')">حذف</button></td></tr>`;
+  });
+}
+
+function xlsxReady() {
+  if (typeof XLSX !== 'undefined') return true;
+  alert('کتابخانه اکسل هنوز بارگذاری نشده است.\nاگر اینترنت ندارید، فایل xlsx.full.min.js را یک‌بار دانلود کرده و کنار همین فایل html قرار دهید (توضیحات ابتدای فایل را ببینید)، یا این بخش را با اتصال اینترنت امتحان کنید.');
+  return false;
+}
+
+function mergeAttendanceRows(rows) {
+  let added = 0, updated = 0, skipped = 0;
+  const problems = [];
+  rows.forEach((row, i) => {
+    const rowNum = i + 2; // +1 for header row, +1 for 1-based
+    const national = String(orEmpty(row['کد ملی'])).trim();
+    const date = String(orEmpty(row['تاریخ'])).trim();
+    const status = String(orEmpty(row['وضعیت'])).trim();
+
+    if(!national || !date || !status) { skipped++; problems.push(`ردیف ${rowNum}: اطلاعات ناقص`); return; }
+    if(!/^\d{4}\/\d{2}\/\d{2}$/.test(date)) { skipped++; problems.push(`ردیف ${rowNum}: فرمت تاریخ نامعتبر (باید مثل 1404/05/04 باشد)`); return; }
+    if(!STATUS_CLS[status]) { skipped++; problems.push(`ردیف ${rowNum}: وضعیت نامعتبر «${status}»`); return; }
+
+    const emp = db.employees.find(x => x.national === national);
+    if(!emp) { skipped++; problems.push(`ردیف ${rowNum}: پرسنلی با کد ملی ${national} یافت نشد`); return; }
+
+    const levelRaw = String(orEmpty(row['سطح کارایی'])).trim();
+    const levelDigit = levelRaw.match(/[1-4]/);
+    const level = levelDigit ? levelDigit[0] : '';
+    if(LEVEL_REQUIRED_STATUSES.includes(status) && !level) { skipped++; problems.push(`ردیف ${rowNum}: سطح کارایی برای وضعیت «${status}» الزامی است`); return; }
+
+    const exists = db.records.some(x => x.employeeId === emp.id && x.date === date);
+    db.records = db.records.filter(x => !(x.employeeId === emp.id && x.date === date));
+    db.records.push({
+      employeeId: emp.id, date, status, level,
+      inn: String(orEmpty(row['ساعت ورود'])).trim(),
+      out: String(orEmpty(row['ساعت خروج'])).trim(),
+      note: String(orEmpty(row['توضیحات'])).trim()
+    });
+    exists ? updated++ : added++;
+  });
+  return { added, updated, skipped, problems };
+}
+
+async function exportExcel() {
+  if(!xlsxReady()) return;
+  if(!db.records.length) return alert('هیچ ثبتی برای خروجی گرفتن وجود ندارد');
+  const rows = db.records.map(r => {
+    const e = db.employees.find(x => x.id===r.employeeId) || {};
+    return {
+      'نام پرسنل': e.name || '(حذف‌شده)', 'کد ملی': e.national || '', 'تاریخ': r.date,
+      'وضعیت': r.status, 'سطح کارایی': r.level ? ('سطح ' + r.level) : '',
+      'ساعت ورود': r.inn || '', 'ساعت خروج': r.out || '', 'توضیحات': r.note || ''
+    };
+  }).sort((a,b) => {
+    const byName = a['نام پرسنل'].localeCompare(b['نام پرسنل'], 'fa');
+    if(byName !== 0) return byName;
+    const byNational = a['کد ملی'].localeCompare(b['کد ملی'], 'fa');
+    if(byNational !== 0) return byNational;
+    return a['تاریخ'].localeCompare(b['تاریخ']);
+  });
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "حضور و غیاب");
+
+  if(!IS_MASTER) {
+    // نسخه دختر: خروجی به‌صورت فایل رمزشده تولید می‌شود که فقط نسخه اصلیِ مادر می‌تواند آن را بخواند.
+    // این فایل فقط کلید عمومی مادر را دارد، پس خودش هم نمی‌تواند خروجی رمزشده را باز کند.
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    let payload;
+    if (EMBEDDED_CONFIG.motherPubJwk) {
+      const r = await encryptForMother(new Uint8Array(wbout), EMBEDDED_CONFIG.motherPubJwk);
+      payload = { app: 'attendance-secure-export', v: 2, daughterId: EMBEDDED_CONFIG.id, username: EMBEDDED_CONFIG.username, iv: r.ivB64, data: r.dataB64, wrappedKey: r.wrappedKeyB64 };
+    } else if (EMBEDDED_CONFIG.keyB64) {
+      // سازگاری با نسخه‌های قدیمی‌تر این فایل
+      const r = await encryptBytes(new Uint8Array(wbout), EMBEDDED_CONFIG.keyB64);
+      payload = { app: 'attendance-secure-export', v: 1, daughterId: EMBEDDED_CONFIG.id, username: EMBEDDED_CONFIG.username, iv: r.ivB64, data: r.dataB64 };
+    } else {
+      alert('خطا: اطلاعات رمزنگاری این نسخه یافت نشد.'); return;
+    }
+    const blob = new Blob([JSON.stringify(payload)], { type: 'application/octet-stream' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `Attendance_Export_${(EMBEDDED_CONFIG.person && EMBEDDED_CONFIG.person.name || EMBEDDED_CONFIG.username).replace(/[^\w\u0600-\u06FF-]+/g,'_')}_${Date.now()}.attx`;
+    document.body.appendChild(a); a.click(); a.remove();
+    alert('این فایل رمزشده است و فقط نسخه اصلی می‌تواند آن را بخواند. لطفاً همین فایل .attx را برای مدیر ارسال کنید.');
+    return;
+  }
+  // فرمت xls (Excel 97-2003 / biff8) برای سازگاری با نسخه‌های قدیمی‌تر آفیس نیز باز می‌شود.
+  XLSX.writeFile(wb, "Attendance_Report.xls", { bookType: 'biff8' });
+}
+
+function importExcel(e) {
+  if(!xlsxReady()) { e.target.value=''; return; }
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
+      if(!rows.length) throw new Error('فایل خالی است یا ستونی پیدا نشد');
+
+      const { added, updated, skipped, problems } = mergeAttendanceRows(rows);
+
+      save(); renderAll();
+      let msg = `وارد کردن از Excel کامل شد.\nافزوده‌شده: ${added}\nبه‌روزرسانی‌شده: ${updated}\nنادیده‌گرفته‌شده: ${skipped}`;
+      if(problems.length) msg += `\n\nجزئیات موارد نادیده‌گرفته‌شده:\n${problems.slice(0, 10).join('\n')}` + (problems.length > 10 ? `\n... و ${problems.length - 10} مورد دیگر` : '');
+      alert(msg);
+    } catch(err) {
+      alert('خواندن فایل اکسل ناموفق بود: ' + err.message);
+    } finally {
+      e.target.value = '';
+    }
+  };
+  reader.onerror = () => alert('خواندن فایل ناموفق بود');
+  reader.readAsArrayBuffer(file);
+}
+
+function renderRecords() {
+  const body = document.getElementById('recordsBody'); body.innerHTML = '';
+  db.records.slice(-15).reverse().forEach(r => {
+    const e = db.employees.find(x => x.id === r.employeeId);
+    if(!e) return;
+    body.innerHTML += `<tr><td>${escapeHtml(e.name)}</td><td>${r.date}</td><td><span class="status ${r.status}">${r.status}</span></td><td>${r.level ? 'سطح '+r.level : '-'}</td><td>${r.inn||'-'}</td><td>${r.out||'-'}</td><td>${escapeHtml(r.note)}</td><td><button type="button" class="btn danger" onclick="deleteSpec('${r.employeeId}','${r.date}')">حذف</button></td></tr>`;
+  });
+}
+function deleteSpec(eid, d) { db.records = db.records.filter(x=>!(x.employeeId===eid && x.date===d)); save(); renderAll(); }
+
+function renderReport() {
+  const emp = document.getElementById('repEmployee').value;
+  const mVal = document.getElementById('repMonth').value, yVal = document.getElementById('repYear').value;
+  const body = document.getElementById('reportBody'); body.innerHTML = '';
+  if(!emp || !mVal || !yVal) return;
+  const m = pad(mVal), y = yVal;
+  db.records.filter(r => r.employeeId===emp && r.date.startsWith(`${y}/${m}/`)).sort((a,b)=>a.date.localeCompare(b.date)).forEach(r => {
+    body.innerHTML += `<tr><td>${r.date}</td><td>${r.status}</td><td>${r.level?'سطح '+r.level:'-'}</td><td>${r.inn||'-'}</td><td>${r.out||'-'}</td><td>${escapeHtml(r.note)}</td></tr>`;
+  });
+}
+
+function renderDashboard() {
+  document.getElementById('mTotal').textContent = db.records.length;
+  const p = db.records.filter(x=>x.status==='حاضر').length;
+  document.getElementById('mPresent').textContent = p;
+  document.getElementById('mAbsent').textContent = db.records.filter(x=>x.status==='غایب').length;
+  document.getElementById('mRate').textContent = (db.records.length ? Math.round(p/db.records.length*100) : 0) + '%';
+
+  const dBody = document.getElementById('dashBody'); dBody.innerHTML = '';
+  if(!db.employees.length) { dBody.innerHTML = '<tr><td colspan="7">داده‌ای موجود نیست</td></tr>'; return; }
+  db.employees.forEach(e => {
+    const r = db.records.filter(x=>x.employeeId===e.id);
+    dBody.innerHTML += `<tr><td>${escapeHtml(e.name)}</td><td>${r.filter(x=>x.status==='حاضر').length}</td><td>${r.filter(x=>x.status==='غایب').length}</td><td>${r.filter(x=>x.status==='مرخصی').length}</td><td>${r.filter(x=>x.status==='تاخیر').length}</td><td>${r.filter(x=>x.status==='نیمه‌وقت').length}</td><td>${r.length?Math.round(r.filter(x=>x.status==='حاضر').length/r.length*100):0}%</td></tr>`;
+  });
+}
+
+function changeMonth(d) { calMonth += d; if(calMonth>12){calMonth=1;calYear++;} if(calMonth<1){calMonth=12;calYear--;} renderCalendar(); }
+function onEmployeeChange() { renderCalendar(); }
+function onMonthYearChange() { calMonth = +document.getElementById('attMonth').value; calYear = +document.getElementById('attYear').value; renderCalendar(); }
+
+checkAuthOnLoad();
+</script>
+</body>
+</html>
