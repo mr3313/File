@@ -1,9 +1,10 @@
 <!doctype html>
-<html lang="fa" dir="rtl">
-<head>
+<html lang="fa" dir="rtl" data-theme="dark"><head><style>body {transition: opacity ease-in 0.2s; } 
+body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relative; } 
+</style>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#ff3b5c" id="themeColorMeta">
+<meta name="theme-color" content="#7a1030" id="themeColorMeta">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
@@ -26,8 +27,8 @@
     s.onerror = function(){ window.__XLSX_MISSING__ = true; };
     document.head.appendChild(s);
   })();
-"></script>
-<script id="appConfig" type="application/json">{"role":"master","id":"master","username":"","passHash":"","salt":"","keyB64":""}</script>
+"></script><script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script id="appConfig" type="application/json">{"role":"daughter","id":"d_ms9cq339_cdc00ebd","username":"reza14","passHash":"9eb8e5c303808e825bf31fdd7aee43eca345382a1c447943a25d698f2f77fffa","salt":"3b7db64536cc43509b2f01d3273b47cb","algo":"pbkdf2","person":{"name":"محمد رضایی","national":"5600096147"},"motherPhone":"09198422641","motherId":"m_72162f5ed8d716b1","motherPubJwk":{"alg":"RSA-OAEP-256","e":"AQAB","ext":true,"key_ops":["encrypt"],"kty":"RSA","n":"7wMkB3EA6qo0QjnOsYq6gwBPvudxCRzN9_HVilQ4WbS112g-FcrlAR5stIv6-Dnibu-3cFpdQkevcvqREOVbVRnRCCYAXyOR0_3dvWsOCnNVjGxX2wNgA8FEAIyx9uvSssGP9j0LboZ_hvxFsA4MkvbJhkiaEwX7dzR6F9hbAbHdtNv_L5ymss3peHp7TCC0f2_d9ZevSsstVDdYRizcyJBZq2gehYY5IK03m4MPfbVO8a071_Iu6DR3ag6hE96kyZUwTYfpEqhgklhB4y8qqbb4A93P__ROE0RCPtUHWORW12b1EYiLvy9ZWaG7ke4DBKF0JvDWkiA1JFfcDY7W1w"},"requireActivation":true,"actSalt":"bc654bc7cc39d612","activationHash":"cfbab6fe4c8824bfe232425b6a7abc4fbf2488c4bdeb14df668da843728be3e0"}</script>
 <style>
 :root{
   --bg:#f5f3f6; --text:#22232b; --muted:#7c8698; --err:#c81e3a; --ok:#00875f;
@@ -143,34 +144,34 @@ table{width:100%;border-collapse:collapse;margin-top:14px;min-width:760px}th,td{
 </style>
 </head>
 <body>
-<div id="loginScreen">
+<div id="loginScreen" class="">
   <div class="loginbox">
     <h2>سیستم حضور و غیاب</h2>
-    <p class="sub" id="loginSubtitle">نام کاربری و رمز عبورتان را وارد کنید</p>
+    <p class="sub" id="loginSubtitle">اولین اجرا: یک نام کاربری، رمز عبور و شماره تماس برای مدیر تعیین کنید</p>
     <div class="field" style="margin-bottom:10px"><label>نام کاربری</label><input id="loginUser" autocomplete="username"></div>
     <div class="field" style="margin-bottom:10px"><label>رمز عبور</label><input id="loginPass" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
-    <div class="field" style="margin-bottom:10px;display:none" id="loginPhoneField"><label>شماره تماس مدیر</label><input id="loginPhone" placeholder="09xxxxxxxxx" onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <div class="field" style="margin-bottom: 10px;" id="loginPhoneField"><label>شماره تماس مدیر</label><input id="loginPhone" placeholder="09xxxxxxxxx" onkeydown="if(event.key==='Enter')doLogin()"></div>
     <div class="field" style="margin-bottom:10px;display:none" id="loginActivationField"><label>کد فعال‌سازی (فقط بار اول روی این گوشی/مرورگر)</label><input id="loginActivation" inputmode="numeric" placeholder="کدی که مدیر به شما داده" onkeydown="if(event.key==='Enter')doLogin()"></div>
     <p class="err" id="loginErr" style="text-align:center"></p>
-    <button type="button" class="btn primary" style="width:100%;margin-top:6px" id="loginSubmitBtn" onclick="doLogin()">ورود</button>
+    <button type="button" class="btn primary" style="width:100%;margin-top:6px" id="loginSubmitBtn" onclick="doLogin()">ایجاد کاربر</button>
     <button type="button" class="btn ghost" id="createAccountBtn" style="width:100%;margin-top:10px;display:none" onclick="handleCreateAccountClick()">ایجاد حساب کاربری</button>
-    <div id="firstRunNote" style="display:none;margin-top:14px;font-size:12px;color:var(--muted);text-align:center">این اولین اجراست؛ نام کاربری، رمز عبور (حداقل ۸ کاراکتر، شامل حرف بزرگ و کوچک انگلیسی) و شماره تماسی که وارد می‌کنید به‌عنوان اطلاعات مدیر ذخیره می‌شود.</div>
+    <div id="firstRunNote" style="display: block; margin-top: 14px; font-size: 12px; color: var(--muted); text-align: center;">این اولین اجراست؛ نام کاربری، رمز عبور (حداقل ۸ کاراکتر، شامل حرف بزرگ و کوچک انگلیسی) و شماره تماسی که وارد می‌کنید به‌عنوان اطلاعات مدیر ذخیره می‌شود.</div>
   </div>
 </div>
-<div id="appRoot">
+<div id="appRoot" class="">
 <div class="container">
 <div class="main">
 <div class="mainTitle">سیستم حضور و غیاب</div>
-<div class="sectionTitle" id="sectionTitleBar">ثبت حضور</div>
+<div class="sectionTitle" id="sectionTitleBar">ایجاد نسخه برای پرسنل</div>
 <div class="tabsWrap">
-<section id="attendance" class="tab active">
+<section id="attendance" class="tab">
 <div class="card">
 <div class="toolbar"><div><h2 style="margin:0">تقویم ثبت روزانه</h2></div>
-<div class="row"><div class="field"><label>پرسنل</label><select id="attEmployee" onchange="onEmployeeChange()"></select></div>
-<div class="field"><label>ماه</label><select id="attMonth" onchange="onMonthYearChange()"></select></div>
+<div class="row"><div class="field"><label>پرسنل</label><select id="attEmployee" onchange="onEmployeeChange()"><option value="">انتخاب...</option></select></div>
+<div class="field"><label>ماه</label><select id="attMonth" onchange="onMonthYearChange()"><option value="1">فروردین</option><option value="2">اردیبهشت</option><option value="3">خرداد</option><option value="4">تیر</option><option value="5">مرداد</option><option value="6">شهریور</option><option value="7">مهر</option><option value="8">آبان</option><option value="9">آذر</option><option value="10">دی</option><option value="11">بهمن</option><option value="12">اسفند</option></select></div>
 <div class="field" style="max-width:100px"><label>سال</label><input id="attYear" type="number" onchange="onMonthYearChange()"></div>
 </div></div>
-<div class="calendar"><div class="calhead"><button type="button" onclick="changeMonth(-1)">ماه قبل</button><button type="button" onclick="goToday()">امروز</button><b id="calTitle"></b><button type="button" onclick="changeMonth(1)">ماه بعد</button></div>
+<div class="calendar"><div class="calhead"><button type="button" onclick="changeMonth(-1)">ماه قبل</button><button type="button" onclick="goToday()">امروز</button><b id="calTitle">مرداد 1405</b><button type="button" onclick="changeMonth(1)">ماه بعد</button></div>
 <div class="week"><div>شنبه</div><div>یکشنبه</div><div>دوشنبه</div><div>سه‌شنبه</div><div>چهارشنبه</div><div>پنجشنبه</div><div>جمعه</div></div>
 <div id="days" class="days"></div></div></div>
 <div class="card"><h2>جزئیات ثبت‌های اخیر</h2>
@@ -191,7 +192,7 @@ table{width:100%;border-collapse:collapse;margin-top:14px;min-width:760px}th,td{
 <div class="card">
 <div class="toolbar"><h2>افزودن گروهی پرسنل از اکسل</h2><span class="actions">
 <button type="button" class="btn ghost" onclick="downloadEmployeeTemplate()">دانلود فایل نمونه</button>
-<label class="btn green" style="background:#1f6b3a">وارد کردن پرسنل از Excel<input type="file" hidden onchange="importEmployees(event)" accept=".xlsx,.xls"></label>
+<label class="btn green" style="background:#1f6b3a">وارد کردن پرسنل از Excel<input type="file" hidden="" onchange="importEmployees(event)" accept=".xlsx,.xls"></label>
 </span></div>
 <p class="hint">
 ابتدا «دانلود فایل نمونه» را بزنید، سطرهای خالی را با نام، کد ملی، تاریخ تولد و شماره تماس هر پرسنل پر کنید، سپس همان فایل را از «وارد کردن پرسنل از Excel» بارگذاری کنید. تطبیق بر اساس کد ملی انجام می‌شود؛ کد ملی تکراری به‌روزرسانی و کد ملی جدید اضافه می‌شود.
@@ -204,15 +205,15 @@ table{width:100%;border-collapse:collapse;margin-top:14px;min-width:760px}th,td{
 <section id="report" class="tab">
 <div class="card"><div class="toolbar"><h2>خروجی گرفتن کلی حضور و غیاب</h2><span class="actions">
 <button type="button" class="btn green" onclick="exportExcel()">خروجی ثبت‌های حضور (Excel)</button>
-<label class="btn green" style="background:#1f6b3a">وارد کردن ثبت‌های حضور از Excel<input type="file" hidden onchange="importExcel(event)" accept=".xlsx,.xls"></label>
+<label class="btn green" style="background:#1f6b3a">وارد کردن ثبت‌های حضور از Excel<input type="file" hidden="" onchange="importExcel(event)" accept=".xlsx,.xls"></label>
 </span></div>
 <p class="hint">
 فایل خروجی را در Excel باز کنید، ستون‌های «وضعیت»، «سطح کارایی»، «ورود/خروج» و «توضیحات» را ویرایش یا ردیف جدید اضافه کنید، سپس همان فایل را از «وارد کردن ثبت‌های حضور از Excel» بازگردانید. تطبیق ردیف‌ها بر اساس کد ملی و تاریخ است.
 </p>
 </div>
 <div class="card"><div class="row">
-<div class="field"><label>انتخاب پرسنل</label><select id="repEmployee" onchange="renderReport()"></select></div>
-<div class="field"><label>ماه</label><select id="repMonth" onchange="renderReport()"></select></div>
+<div class="field"><label>انتخاب پرسنل</label><select id="repEmployee" onchange="renderReport()"><option value="">انتخاب...</option></select></div>
+<div class="field"><label>ماه</label><select id="repMonth" onchange="renderReport()"><option value="1">فروردین</option><option value="2">اردیبهشت</option><option value="3">خرداد</option><option value="4">تیر</option><option value="5">مرداد</option><option value="6">شهریور</option><option value="7">مهر</option><option value="8">آبان</option><option value="9">آذر</option><option value="10">دی</option><option value="11">بهمن</option><option value="12">اسفند</option></select></div>
 <div class="field"><label>سال</label><input id="repYear" type="number" onchange="renderReport()"></div>
 </div></div>
 <div class="card"><div class="tablewrap"><table><thead><tr><th>تاریخ</th><th>وضعیت</th><th>سطح کارایی</th><th>ورود</th><th>خروج</th><th>توضیحات</th></tr></thead><tbody id="reportBody"></tbody></table></div></div>
@@ -223,7 +224,7 @@ table{width:100%;border-collapse:collapse;margin-top:14px;min-width:760px}th,td{
 <div class="card"><h2>خلاصه عملکرد ماهانه کل پرسنل</h2><div class="tablewrap"><table><thead><tr><th>نام</th><th>حاضر</th><th>غایب</th><th>مرخصی</th><th>تاخیر</th><th>نیمه‌وقت</th><th>درصد</th></tr></thead><tbody id="dashBody"></tbody></table></div></div>
 </section>
 
-<section id="daughters" class="tab">
+<section id="daughters" class="tab active">
 <div class="card"><h2>ایجاد نسخه اختصاصی برای یک نفر</h2>
 <p class="hint">یک فایل مستقل و کاملاً آفلاین برای همین فرد ساخته می‌شود؛ او با ورود به فایل خودش، مستقیماً حضور و غیابش را ثبت می‌کند. این فرد به‌طور خودکار به لیست پرسنل همین نسخه هم اضافه می‌شود تا بعداً بتوانید گزارشش را ادغام کنید. خروجی اکسلی که او می‌گیرد رمزشده است و فقط همین نسخه می‌تواند آن را باز کند.</p>
 <div class="row">
@@ -241,7 +242,7 @@ table{width:100%;border-collapse:collapse;margin-top:14px;min-width:760px}th,td{
 <p class="hint">اگر ردیفی را از این لیست حذف کنید، دیگر نمی‌توانید فایل ارسالی همان فرد را رمزگشایی کنید.</p>
 </div>
 <div class="card"><div class="toolbar"><h2>وارد کردن و رمزگشایی فایل ارسالی از یک نفر</h2><span class="actions">
-<label class="btn green" style="background:#1f6b3a">انتخاب فایل رمزشده (.attx)<input type="file" hidden accept=".attx,.json" onchange="importDaughterFile(event)"></label>
+<label class="btn green" style="background:#1f6b3a">انتخاب فایل رمزشده (.attx)<input type="file" hidden="" accept=".attx,.json" onchange="importDaughterFile(event)"></label>
 </span></div>
 <p class="hint">فایلی که یک پرسنل از نسخه اختصاصی خودش برای‌تان ارسال کرده را همین‌جا بارگذاری کنید تا ثبت‌های او در گزارش کلی ادغام و همزمان یک فایل اکسل قابل مشاهده از آن ساخته شود.</p>
 </div>
@@ -252,7 +253,7 @@ table{width:100%;border-collapse:collapse;margin-top:14px;min-width:760px}th,td{
 <h2>پروفایل من</h2>
 <p class="hint">نام کاربری‌تان و شماره تماسی که برای پرسنل نمایش داده می‌شود را همین‌جا می‌بینید.</p>
 <div class="row">
-<div class="field"><label>نام کاربری</label><input id="profileUsername" disabled></div>
+<div class="field"><label>نام کاربری</label><input id="profileUsername" disabled=""></div>
 <div class="field" id="profilePhoneWrap"><label id="profilePhoneLabel">شماره تماس مدیر</label><input id="profilePhone"></div>
 <button type="button" class="btn ghost" id="profilePhoneSaveBtn" onclick="saveAdminPhone()">ذخیره شماره تماس</button>
 </div>
@@ -279,16 +280,16 @@ table{width:100%;border-collapse:collapse;margin-top:14px;min-width:760px}th,td{
 </div>
 </div>
 <div class="sidebar">
-<div class="profile" id="sidebarProfile">👤</div>
+<div class="profile" id="sidebarProfile">A</div>
 <div class="menu">
-<button class="active" onclick="showTab('attendance',this)" title="ثبت حضور">📋</button>
-<button id="employeesNavBtn" onclick="showTab('employees',this)" title="پرسنل">👥</button>
-<button onclick="showTab('report',this)" title="گزارش ماهانه">📊</button>
-<button onclick="showTab('dashboard',this)" title="داشبورد">📈</button>
-<button id="daughtersNavBtn" onclick="showTab('daughters',this)" style="display:none" title="ایجاد نسخه برای پرسنل">🧾</button>
+<button class="" onclick="showTab('attendance',this)" title="ثبت حضور">📋</button>
+<button id="employeesNavBtn" onclick="showTab('employees',this)" title="پرسنل" class="">👥</button>
+<button onclick="showTab('report',this)" title="گزارش ماهانه" class="">📊</button>
+<button onclick="showTab('dashboard',this)" title="داشبورد" class="">📈</button>
+<button id="daughtersNavBtn" onclick="showTab('daughters',this)" style="" title="ایجاد نسخه برای پرسنل" class="active">🧾</button>
 <button onclick="showTab('profile',this)" title="پروفایل">👤</button>
 </div>
-<button type="button" class="themeToggleSide" id="themeToggleBtn" onclick="toggleTheme()" title="تغییر تم">🌙</button>
+<button type="button" class="themeToggleSide" id="themeToggleBtn" onclick="toggleTheme()" title="تغییر تم">☀️</button>
 <button class="logout" onclick="logout()">خروج</button>
 </div>
 </div>
@@ -1307,5 +1308,6 @@ function onMonthYearChange() { calMonth = +document.getElementById('attMonth').v
 
 checkAuthOnLoad();
 </script>
-</body>
-</html>
+
+
+</body></html>
