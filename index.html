@@ -1582,140 +1582,22 @@
     ✓ همگام شده
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-// ==================== BROADCAST CHANNEL API ====================
+// ==================== SUPABASE CONFIGURATION ====================
+const SUPABASE_URL = "https://ycblbtsffqxzppozcmed.supabase.co";
+const SUPABASE_KEY = "sb_publishable_5xvLKeMgxTgcQyV78u0NBw_MHrdfp0d";
+const GAME_ID = "b60198f0-6d4b-4df2-ae4d-21d920c80092";
 
-class SyncManager {
-    constructor() {
-        try {
-            this.channel = new BroadcastChannel('quiz-game-channel');
-            this.channel.onmessage = (event) => {
-                this.handleMessage(event.data);
-            };
-            this.isAvailable = true;
-            console.log('📡 BroadcastChannel available');
-        } catch (e) {
-            this.isAvailable = false;
-            console.log('⚠️ BroadcastChannel not available, using Polling');
-            this.startPolling();
-        }
-    }
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    send(type, data) {
-        if (this.isAvailable) {
-            try {
-                this.channel.postMessage({ type, data, timestamp: Date.now() });
-                console.log('📤 Broadcast:', type);
-            } catch (e) {
-                console.error('Error broadcasting:', e);
-            }
-        }
-    }
-
-    handleMessage(message) {
-        const { type, data } = message;
-        
-        if (type === 'PLAYER_REGISTERED') {
-            GameState.players = data;
-            updateAdminDashboard();
-            updatePlayersList('all');
-            updateWaitingScreen();
-        } else if (type === 'GAME_STARTED') {
-            GameState.gameStatus = 'active';
-            GameState.questions = data.questions;
-            if (GameState.currentPlayer.status === 'playing') {
-                startGameForPlayer();
-            }
-        } else if (type === 'GAME_STATE_UPDATED') {
-            GameState.gameStatus = data.gameStatus;
-            GameState.questions = data.questions;
-            updateAdminDashboard();
-        } else if (type === 'QUESTION_ADDED') {
-            GameState.questions = data;
-            updateQuestionsList();
-            updateAdminDashboard();
-        } else if (type === 'GAME_FINISHED') {
-            GameState.gameStatus = 'finished';
-            GameState.winners = data;
-            finishGame();
-        }
-    }
-
-    startPolling() {
-        setInterval(() => {
-            // Fallback polling if BroadcastChannel is not available
-            const savedPlayers = StorageManager.load(StorageManager.KEYS.PLAYERS);
-            if (savedPlayers && JSON.stringify(savedPlayers) !== JSON.stringify(GameState.players)) {
-                GameState.players = savedPlayers;
-                updateAdminDashboard();
-                updatePlayersList('all');
-                updateWaitingScreen();
-            }
-        }, 1000);
-    }
-}
-
-const syncManager = new SyncManager();
-
-// ==================== LOCALSTORAGE MANAGER ====================
-
-class StorageManager {
-    static KEYS = {
-        GAME_STATE: 'quizGameState',
-        CURRENT_PLAYER: 'quizCurrentPlayer',
-        PLAYERS: 'quizPlayers',
-        QUESTIONS: 'quizQuestions',
-        WINNERS: 'quizWinners',
-        GAME_STATUS: 'quizGameStatus'
-    };
-
-    static save(key, data) {
-        try {
-            localStorage.setItem(key, JSON.stringify(data));
-            console.log('💾 Saved:', key);
-        } catch (e) {
-            console.error('❌ Storage error:', e);
-        }
-    }
-
-    static load(key, defaultValue = null) {
-        try {
-            const data = localStorage.getItem(key);
-            return data ? JSON.parse(data) : defaultValue;
-        } catch (e) {
-            console.error('❌ Load error:', e);
-            return defaultValue;
-        }
-    }
-
-    static remove(key) {
-        try {
-            localStorage.removeItem(key);
-            console.log('🗑️ Removed:', key);
-        } catch (e) {
-            console.error('❌ Remove error:', e);
-        }
-    }
-
-    static clear() {
-        try {
-            Object.values(StorageManager.KEYS).forEach(key => {
-                localStorage.removeItem(key);
-            });
-            console.log('🗑️ All data cleared');
-        } catch (e) {
-            console.error('❌ Clear error:', e);
-        }
-    }
-}
-
-// ==================== GLOBAL STATE MANAGEMENT ====================
-
+// ==================== GLOBAL STATE ====================
 const GameState = {
     currentScreen: 'login',
     gameStatus: 'setup',
     isAdminMode: false,
-
+    game: null,
+    gameState: null,
     currentPlayer: {
         id: null,
         firstName: '',
@@ -1726,115 +1608,353 @@ const GameState = {
         correctAnswers: 0,
         joinedAt: null
     },
-
-    questions: [
-        {
-            id: 1,
-            text: 'پایتخت ایران کدام است؟',
-            options: ['تهران', 'اصفهان', 'شیراز', 'مشهد'],
-            correctAnswer: 0
-        },
-        {
-            id: 2,
-            text: '۲ + ۲ برابر است با؟',
-            options: ['۳', '۴', '۵', '۶'],
-            correctAnswer: 1
-        },
-        {
-            id: 3,
-            text: 'رنگ علم ایران چند رنگ است؟',
-            options: ['۲', '۳', '۴', '۵'],
-            correctAnswer: 1
-        },
-        {
-            id: 4,
-            text: 'کدام سیاره نزدیک‌ترین به خورشید است؟',
-            options: ['زهره', 'عطارد', 'زمین', 'مریخ'],
-            correctAnswer: 1
-        },
-        {
-            id: 5,
-            text: 'دریای خزر چند دریای جهان است؟',
-            options: ['بزرگ‌ترین', 'دوم بزرگ‌ترین', 'سوم بزرگ‌ترین', 'چهارم بزرگ‌ترین'],
-            correctAnswer: 0
-        },
-        {
-            id: 6,
-            text: 'چند ماه در یک سال است؟',
-            options: ['۱۰', '۱۱', '۱۲', '۱۳'],
-            correctAnswer: 2
-        },
-        {
-            id: 7,
-            text: 'ترکیب متن و تصویر را چه می‌نامند؟',
-            options: ['مالتی‌مدیا', 'مدیا', 'تصویر', 'گرافیک'],
-            correctAnswer: 0
-        },
-        {
-            id: 8,
-            text: 'کدام یکی از اختراعات بشر است؟',
-            options: ['بارش باران', 'جاذبه', 'کامپیوتر', 'هوا'],
-            correctAnswer: 2
-        },
-        {
-            id: 9,
-            text: 'ارتفاع کوه اورست از سطح دریا چقدر است؟',
-            options: ['۷۰۰۰ متر', '۸۸۰۰ متر', 'بیش از ۹۰۰۰ متر', '۶۰۰۰ متر'],
-            correctAnswer: 1
-        },
-        {
-            id: 10,
-            text: 'کدام کشور مهد تمدن ایرانی است؟',
-            options: ['چین', 'ایران', 'هند', 'مصر'],
-            correctAnswer: 1
-        }
-    ],
-
+    questions: [],
     players: [],
     winners: [],
-    adminCurrentQuestionIndex: 0,
     adminUsername: 'admin',
-    adminPassword: '123456mm'
+    adminPassword: '123456mm',
+    realtimeChannels: []
 };
 
-// ==================== INITIALIZATION ====================
+const PLAYER_POINTER_KEY = 'quiz_current_player_id';
 
-function initializeGame() {
-    const savedQuestions = StorageManager.load(StorageManager.KEYS.QUESTIONS);
-    const savedPlayers = StorageManager.load(StorageManager.KEYS.PLAYERS);
-    const savedWinners = StorageManager.load(StorageManager.KEYS.WINNERS);
-    const savedGameStatus = StorageManager.load(StorageManager.KEYS.GAME_STATUS);
-
-    if (savedQuestions && savedQuestions.length > 0) {
-        GameState.questions = savedQuestions;
+// The browser keeps only a lightweight identity pointer in a cookie.
+// Supabase remains the source of truth for every game record.
+function rememberCurrentPlayerId(id) {
+    if (id) {
+        document.cookie = `${PLAYER_POINTER_KEY}=${encodeURIComponent(id)}; Max-Age=31536000; Path=/; SameSite=Lax`;
+    } else {
+        document.cookie = `${PLAYER_POINTER_KEY}=; Max-Age=0; Path=/; SameSite=Lax`;
     }
-    if (savedPlayers && savedPlayers.length > 0) {
-        GameState.players = savedPlayers;
-    }
-    if (savedWinners && savedWinners.length > 0) {
-        GameState.winners = savedWinners;
-    }
-    if (savedGameStatus) {
-        GameState.gameStatus = savedGameStatus;
-    }
-
-    console.log('🎮 Game initialized');
+}
+function getRememberedPlayerId() {
+    const match = document.cookie.match(new RegExp(`(?:^|; )${PLAYER_POINTER_KEY}=([^;]*)`));
+    return match ? decodeURIComponent(match[1]) : null;
 }
 
-// ==================== PHONE MASKING UTILITY ====================
+// ==================== UI / SYNC HELPERS ====================
+function setSyncStatus(type, message) {
+    const el = document.getElementById('syncStatus');
+    if (!el) return;
+    el.className = `sync-status ${type}`;
+    el.textContent = message;
+}
 
+function showError(elementId, message) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    el.textContent = message;
+    el.classList.remove('hidden');
+}
+
+function clearError(elementId) {
+    const el = document.getElementById(elementId);
+    if (el) el.classList.add('hidden');
+}
+
+function reportSupabaseError(context, error, elementId = null) {
+    console.error(`❌ ${context}:`, error);
+    setSyncStatus('error', '⚠️ خطا در اتصال به سرور');
+    if (elementId) showError(elementId, `❌ ${error?.message || 'خطا در ارتباط با Supabase'}`);
+}
+
+async function queryOrThrow(promise, context) {
+    const { data, error } = await promise;
+    if (error) throw new Error(`${context}: ${error.message}`);
+    return data;
+}
+
+// ==================== SUPABASE DATA ACCESS ====================
+async function loadGame() {
+    const data = await queryOrThrow(
+        supabaseClient.from('games').select('*').eq('id', GAME_ID).single(),
+        'بارگذاری مسابقه'
+    );
+    GameState.game = data;
+    GameState.gameStatus = data.status || 'setup';
+    return data;
+}
+
+function mapQuestion(row) {
+    return {
+        id: row.id,
+        text: row.question_text,
+        options: [row.option_a, row.option_b, row.option_c, row.option_d],
+        correctAnswer: Number(row.correct_answer),
+        questionOrder: Number(row.question_order)
+    };
+}
+
+async function loadQuestions() {
+    const rows = await queryOrThrow(
+        supabaseClient
+            .from('questions')
+            .select('*')
+            .eq('game_id', GAME_ID)
+            .order('question_order', { ascending: true }),
+        'بارگذاری سؤالات'
+    );
+    GameState.questions = (rows || []).map(mapQuestion);
+    return GameState.questions;
+}
+
+function mapPlayer(row) {
+    return {
+        id: row.id,
+        gameId: row.game_id,
+        firstName: row.first_name,
+        lastName: row.last_name,
+        phone: row.phone,
+        status: row.status,
+        currentQuestionIndex: Number(row.current_question_index || 0),
+        correctAnswers: Number(row.correct_answers || 0),
+        joinedAt: row.joined_at,
+        eliminatedAt: row.eliminated_at,
+        finishedAt: row.finished_at
+    };
+}
+
+async function loadPlayers() {
+    const rows = await queryOrThrow(
+        supabaseClient
+            .from('players')
+            .select('*')
+            .eq('game_id', GAME_ID)
+            .order('joined_at', { ascending: true }),
+        'بارگذاری بازیکنان'
+    );
+    GameState.players = (rows || []).map(mapPlayer);
+
+    if (GameState.currentPlayer.id) {
+        const me = GameState.players.find(p => p.id === GameState.currentPlayer.id);
+        if (me) GameState.currentPlayer = { ...GameState.currentPlayer, ...me };
+    }
+    return GameState.players;
+}
+
+async function loadCurrentPlayer() {
+    const id = getRememberedPlayerId();
+    if (!id) return null;
+
+    const { data, error } = await supabaseClient
+        .from('players')
+        .select('*')
+        .eq('id', id)
+        .eq('game_id', GAME_ID)
+        .maybeSingle();
+
+    if (error) throw error;
+    if (!data) {
+        rememberCurrentPlayerId(null);
+        return null;
+    }
+
+    GameState.currentPlayer = mapPlayer(data);
+    return GameState.currentPlayer;
+}
+
+async function loadWinners() {
+    const rows = await queryOrThrow(
+        supabaseClient
+            .from('winners')
+            .select('*')
+            .eq('game_id', GAME_ID)
+            .order('rank', { ascending: true }),
+        'بارگذاری برندگان'
+    );
+
+    const playerIds = (rows || []).map(w => w.player_id);
+    let playerMap = {};
+    if (playerIds.length) {
+        const players = await queryOrThrow(
+            supabaseClient.from('players').select('*').in('id', playerIds),
+            'بارگذاری اطلاعات برندگان'
+        );
+        playerMap = Object.fromEntries((players || []).map(p => [p.id, mapPlayer(p)]));
+    }
+
+    GameState.winners = (rows || []).map(w => ({
+        ...playerMap[w.player_id],
+        playerId: w.player_id,
+        rank: Number(w.rank || 0),
+        winnerId: w.id
+    })).filter(w => w.firstName);
+    return GameState.winners;
+}
+
+async function loadGameStateRow() {
+    const data = await queryOrThrow(
+        supabaseClient.from('game_state').select('*').order('updated_at', { ascending: false }).limit(1).maybeSingle(),
+        'بارگذاری وضعیت بازی'
+    );
+    GameState.gameState = data || null;
+    return data;
+}
+
+async function refreshAllData() {
+    setSyncStatus('syncing', '⏳ در حال همگام‌سازی...');
+    try {
+        await Promise.all([loadGame(), loadQuestions(), loadPlayers(), loadWinners(), loadGameStateRow()]);
+        if (GameState.game) GameState.gameStatus = GameState.game.status;
+        if (GameState.gameState && !GameState.game) GameState.gameStatus = GameState.gameState.status;
+        updateAllViews();
+        setSyncStatus('synced', '✓ همگام شده');
+    } catch (error) {
+        reportSupabaseError('همگام‌سازی', error);
+    }
+}
+
+// ==================== REALTIME ====================
+function stopRealtime() {
+    GameState.realtimeChannels.forEach(channel => supabaseClient.removeChannel(channel));
+    GameState.realtimeChannels = [];
+}
+
+function startRealtime() {
+    stopRealtime();
+
+    const channel = supabaseClient
+        .channel(`quiz-game-${GAME_ID}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'games', filter: `id=eq.${GAME_ID}` }, async () => {
+            await refreshAllData();
+            handleGameStatusChange();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: `game_id=eq.${GAME_ID}` }, async payload => {
+            console.log('📡 Realtime players:', payload.eventType);
+            await refreshPlayersOnly();
+            handlePlayerRealtimeChange(payload);
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'answers', filter: `game_id=eq.${GAME_ID}` }, async () => {
+            await refreshPlayersOnly();
+            updateAllViews();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'game_state' }, async () => {
+            await refreshGameStateOnly();
+            updateAllViews();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'winners', filter: `game_id=eq.${GAME_ID}` }, async () => {
+            await loadWinners();
+            displayWinners();
+            updateAllViews();
+        })
+        .subscribe(status => {
+            console.log('📡 Supabase Realtime:', status);
+            if (status === 'SUBSCRIBED') setSyncStatus('synced', '✓ همگام‌سازی زنده فعال است');
+            if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') setSyncStatus('error', '⚠️ اتصال زنده قطع شد');
+        });
+
+    GameState.realtimeChannels.push(channel);
+}
+
+async function refreshPlayersOnly() {
+    try {
+        await loadPlayers();
+        updateAdminDashboard();
+        updatePlayersList('all');
+        updateWaitingScreen();
+    } catch (error) {
+        reportSupabaseError('به‌روزرسانی بازیکنان', error);
+    }
+}
+
+async function refreshGameStateOnly() {
+    try {
+        await loadGame();
+        await loadGameStateRow();
+        if (GameState.game) GameState.gameStatus = GameState.game.status;
+    } catch (error) {
+        reportSupabaseError('به‌روزرسانی وضعیت بازی', error);
+    }
+}
+
+function handlePlayerRealtimeChange() {
+    updateAllViews();
+    if (GameState.currentPlayer.id) {
+        const me = GameState.players.find(p => p.id === GameState.currentPlayer.id);
+        if (me) {
+            const previousStatus = GameState.currentPlayer.status;
+            GameState.currentPlayer = { ...GameState.currentPlayer, ...me };
+            if (previousStatus !== me.status) {
+                if (me.status === 'playing' && GameState.gameStatus === 'active') startGameForPlayer();
+                if (me.status === 'eliminated') showEliminatedScreenFromState();
+                if (me.status === 'winner') watchResults();
+            }
+        }
+    }
+}
+
+function handleGameStatusChange() {
+    if (GameState.gameStatus === 'active' && GameState.currentPlayer.id) {
+        const me = GameState.players.find(p => p.id === GameState.currentPlayer.id);
+        if (me && me.status === 'playing') startGameForPlayer();
+    } else if (GameState.gameStatus === 'finished') {
+        finishGame();
+    }
+}
+
+// ==================== GLOBAL VIEW UPDATES ====================
+function updateAllViews() {
+    updateWaitingScreen();
+    updateAdminDashboard();
+    updatePlayersList('all');
+    if (GameState.currentScreen === 'questions') updateQuestionsList();
+    if (GameState.currentScreen === 'results') displayWinners();
+    updateCurrentGameQuestionIfNeeded();
+}
+
+function updateCurrentGameQuestionIfNeeded() {
+    if (GameState.currentScreen !== 'game' || !GameState.currentPlayer.id) return;
+    const index = Number(GameState.currentPlayer.currentQuestionIndex || 0);
+    if (GameState.gameStatus === 'active' && GameState.questions[index]) {
+        loadQuestion(index);
+    }
+}
+
+// ==================== INITIALIZATION ====================
+async function initializeGame() {
+    try {
+        await refreshAllData();
+        await loadCurrentPlayer();
+        await loadPlayers();
+
+        if (GameState.currentPlayer.id) {
+            const me = GameState.players.find(p => p.id === GameState.currentPlayer.id);
+            if (me) GameState.currentPlayer = me;
+        }
+
+        startRealtime();
+        updateAllViews();
+
+        if (GameState.currentPlayer.id) {
+            if (GameState.currentPlayer.status === 'playing' && GameState.gameStatus === 'active') {
+                startGameForPlayer();
+            } else if (GameState.currentPlayer.status === 'eliminated') {
+                showEliminatedScreenFromState();
+            } else if (GameState.gameStatus === 'finished') {
+                await loadWinners();
+                displayWinners();
+                switchScreen('results');
+            } else {
+                document.getElementById('waitingPlayerName').textContent = `${GameState.currentPlayer.firstName} ${GameState.currentPlayer.lastName}`;
+                document.getElementById('waitingPlayerPhone').textContent = maskPhoneNumber(GameState.currentPlayer.phone);
+                switchScreen('waiting');
+            }
+        }
+        console.log('🎮 Game initialized from Supabase');
+    } catch (error) {
+        reportSupabaseError('راه‌اندازی بازی', error, 'registrationError');
+    }
+}
+
+// ==================== PHONE MASKING ====================
 function maskPhoneNumber(phone) {
-    if (!phone || phone.length < 11) return phone;
+    if (!phone || phone.length < 11) return phone || '';
     return phone.substring(0, 4) + '*****' + phone.substring(9);
 }
 
 // ==================== SCREEN MANAGEMENT ====================
-
 function switchScreen(screenName) {
-    document.querySelectorAll('.screen').forEach(screen => {
-        screen.classList.remove('active');
-    });
-
+    document.querySelectorAll('.screen').forEach(screen => screen.classList.remove('active'));
     const targetScreen = document.getElementById(screenName + 'Screen');
     if (targetScreen) {
         targetScreen.classList.add('active');
@@ -1842,88 +1962,91 @@ function switchScreen(screenName) {
     }
 }
 
-// ==================== REGISTRATION LOGIC ====================
-
-document.getElementById('registrationForm').addEventListener('submit', function(e) {
+// ==================== REGISTRATION ====================
+document.getElementById('registrationForm').addEventListener('submit', async function(e) {
     e.preventDefault();
 
     const firstName = document.getElementById('firstName').value.trim();
     const lastName = document.getElementById('lastName').value.trim();
     const phone = document.getElementById('phone').value.trim();
-
     const errorElement = document.getElementById('registrationError');
-    
+    clearError('registrationError');
+
     if (!firstName || !lastName || !phone) {
-        errorElement.textContent = '❌ لطفاً تمام فیلدها را پر کنید';
-        errorElement.classList.remove('hidden');
+        showError('registrationError', '❌ لطفاً تمام فیلدها را پر کنید');
         return;
     }
-
     if (!/^09\d{9}$/.test(phone)) {
-        errorElement.textContent = '❌ شماره تلفن باید با 09 شروع شود و 11 رقمی باشد';
-        errorElement.classList.remove('hidden');
+        showError('registrationError', '❌ شماره تلفن باید با 09 شروع شود و 11 رقمی باشد');
         return;
     }
 
-    if (GameState.players.some(p => p.phone === phone)) {
-        errorElement.textContent = '❌ این شماره تلفن قبلاً ثبت‌نام شده است';
-        errorElement.classList.remove('hidden');
-        return;
+    setSyncStatus('syncing', '⏳ در حال ثبت‌نام...');
+    try {
+        const existing = await queryOrThrow(
+            supabaseClient.from('players').select('id').eq('game_id', GAME_ID).eq('phone', phone).maybeSingle(),
+            'بررسی شماره تلفن'
+        );
+        if (existing) {
+            showError('registrationError', '❌ این شماره تلفن قبلاً ثبت‌نام شده است');
+            setSyncStatus('synced', '✓ همگام شده');
+            return;
+        }
+
+        const player = await queryOrThrow(
+            supabaseClient
+                .from('players')
+                .insert({
+                    game_id: GAME_ID,
+                    first_name: firstName,
+                    last_name: lastName,
+                    phone,
+                    status: 'waiting',
+                    current_question_index: 0,
+                    correct_answers: 0
+                })
+                .select()
+                .single(),
+            'ثبت بازیکن'
+        );
+
+        GameState.currentPlayer = mapPlayer(player);
+        rememberCurrentPlayerId(player.id);
+        await loadPlayers();
+
+        this.reset();
+        document.getElementById('waitingPlayerName').textContent = `${firstName} ${lastName}`;
+        document.getElementById('waitingPlayerPhone').textContent = maskPhoneNumber(phone);
+        updateWaitingScreen();
+        switchScreen('waiting');
+        setSyncStatus('synced', '✓ ثبت شد و همگام شد');
+    } catch (error) {
+        reportSupabaseError('ثبت‌نام بازیکن', error, 'registrationError');
     }
-
-    const newPlayer = {
-        id: Math.random().toString(36).substr(2, 9),
-        firstName: firstName,
-        lastName: lastName,
-        phone: phone,
-        status: 'waiting',
-        currentQuestionIndex: 0,
-        correctAnswers: 0,
-        joinedAt: new Date().toISOString(),
-        selectedAnswers: []
-    };
-
-    GameState.currentPlayer = newPlayer;
-    GameState.players.push(newPlayer);
-
-    StorageManager.save(StorageManager.KEYS.CURRENT_PLAYER, GameState.currentPlayer);
-    StorageManager.save(StorageManager.KEYS.PLAYERS, GameState.players);
-
-    // Broadcast to other tabs
-    syncManager.send('PLAYER_REGISTERED', GameState.players);
-
-    this.reset();
-    errorElement.classList.add('hidden');
-
-    document.getElementById('waitingPlayerName').textContent = 
-        `${firstName} ${lastName}`;
-    document.getElementById('waitingPlayerPhone').textContent = 
-        maskPhoneNumber(phone);
-    
-    updateWaitingScreen();
-    switchScreen('waiting');
-
-    console.log('📤 Player registered:', newPlayer);
 });
 
 function updateWaitingScreen() {
     document.getElementById('totalPlayersCount').textContent = GameState.players.length;
-    
     const playersListItems = document.getElementById('playersListItems');
     playersListItems.innerHTML = '';
-    
     GameState.players.forEach(player => {
         const badge = document.createElement('span');
         badge.className = 'player-badge';
         badge.textContent = `${player.firstName} ${player.lastName}`;
         playersListItems.appendChild(badge);
     });
+
+    if (GameState.currentPlayer.id) {
+        document.getElementById('waitingPlayerName').textContent = `${GameState.currentPlayer.firstName} ${GameState.currentPlayer.lastName}`;
+        document.getElementById('waitingPlayerPhone').textContent = maskPhoneNumber(GameState.currentPlayer.phone);
+        const status = GameState.currentPlayer.status;
+        document.getElementById('waitingPlayerStatus').textContent = status === 'playing' ? '▶️ در حال بازی' : status === 'winner' ? '🏆 برنده' : '⏳ در انتظار';
+    }
 }
 
 // ==================== ADMIN LOGIN ====================
-
 function switchToAdminLogin() {
-    document.getElementById('adminLoginError').classList.add('hidden');
+    clearError('adminLoginError');
     document.getElementById('adminUsername').value = '';
     document.getElementById('adminPassword').value = '';
     switchScreen('adminLogin');
@@ -1931,260 +2054,209 @@ function switchToAdminLogin() {
 
 document.getElementById('adminLoginForm')?.addEventListener('submit', function(e) {
     e.preventDefault();
-
     const username = document.getElementById('adminUsername').value.trim();
     const password = document.getElementById('adminPassword').value.trim();
-
-    const errorElement = document.getElementById('adminLoginError');
-
     if (username === GameState.adminUsername && password === GameState.adminPassword) {
         GameState.isAdminMode = true;
         switchScreen('admin');
         updateAdminDashboard();
-        errorElement.classList.add('hidden');
+        updateQuestionsList();
+        updatePlayersList('all');
+        clearError('adminLoginError');
     } else {
-        errorElement.textContent = '❌ نام کاربری یا رمز عبور اشتباه است';
-        errorElement.classList.remove('hidden');
+        showError('adminLoginError', '❌ نام کاربری یا رمز عبور اشتباه است');
     }
 });
 
-// ==================== ADMIN MODE ====================
-
 function exitAdminMode() {
     GameState.isAdminMode = false;
-    GameState.gameStatus = 'setup';
-    StorageManager.save(StorageManager.KEYS.GAME_STATUS, GameState.gameStatus);
+    switchScreen('login');
+}
+
+function backToHome() {
+    GameState.currentPlayer = {
+        id: null, firstName: '', lastName: '', phone: '', status: 'waiting',
+        currentQuestionIndex: 0, correctAnswers: 0, joinedAt: null
+    };
+    rememberCurrentPlayerId(null);
+    document.getElementById('registrationForm').reset();
+    clearError('registrationError');
     switchScreen('login');
 }
 
 function switchAdminTab(tabName) {
-    document.querySelectorAll('.admin-tab').forEach(tab => {
-        tab.classList.remove('active');
-    });
-    document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
-
-    document.querySelectorAll('.admin-section').forEach(section => {
-        section.classList.remove('active');
-    });
-    document.querySelector(`[data-section="${tabName}"]`).classList.add('active');
-
-    if (tabName === 'questions') {
-        updateQuestionsList();
-    } else if (tabName === 'players') {
-        updatePlayersList('all');
-    }
+    document.querySelectorAll('.admin-tab').forEach(tab => tab.classList.remove('active'));
+    const tab = document.querySelector(`[data-tab="${tabName}"]`);
+    if (tab) tab.classList.add('active');
+    document.querySelectorAll('.admin-section').forEach(section => section.classList.remove('active'));
+    const section = document.querySelector(`[data-section="${tabName}"]`);
+    if (section) section.classList.add('active');
+    if (tabName === 'questions') updateQuestionsList();
+    if (tabName === 'players') updatePlayersList('all');
 }
 
 function updateAdminDashboard() {
-    document.getElementById('adminQuestionsCount').textContent = 
-        GameState.questions.length;
-    document.getElementById('adminTotalPlayers').textContent = 
-        GameState.players.length;
-    document.getElementById('adminActivePlayers').textContent = 
-        GameState.players.filter(p => p.status === 'playing').length;
-    document.getElementById('adminEliminatedPlayers').textContent = 
-        GameState.players.filter(p => p.status === 'eliminated').length;
+    document.getElementById('adminQuestionsCount').textContent = GameState.questions.length;
+    document.getElementById('adminTotalPlayers').textContent = GameState.players.length;
+    document.getElementById('adminActivePlayers').textContent = GameState.players.filter(p => p.status === 'playing').length;
+    document.getElementById('adminEliminatedPlayers').textContent = GameState.players.filter(p => p.status === 'eliminated').length;
 
     const statusElement = document.getElementById('adminGameStatus');
-    if (GameState.gameStatus === 'setup') {
-        statusElement.textContent = '⚙️ تعریف سؤالات';
-    } else if (GameState.gameStatus === 'waiting') {
-        statusElement.textContent = '⏳ در انتظار شروع';
-    } else if (GameState.gameStatus === 'active') {
-        statusElement.textContent = '▶️ مسابقه در حال برگزاری';
-    } else if (GameState.gameStatus === 'finished') {
-        statusElement.textContent = '✓ مسابقه پایان یافته';
-    }
+    const status = GameState.gameStatus;
+    statusElement.textContent = status === 'setup' ? '⚙️ تعریف سؤالات' :
+        status === 'waiting' ? '⏳ در انتظار شروع' :
+        status === 'active' ? '▶️ مسابقه در حال برگزاری' :
+        status === 'finished' ? '✓ مسابقه پایان یافته' : status;
 
-    const startBtn = document.getElementById('adminStartGameBtn');
-    const stopBtn = document.getElementById('adminStopGameBtn');
-    
-    startBtn.disabled = GameState.questions.length < 10 || GameState.gameStatus !== 'setup';
-    stopBtn.disabled = GameState.gameStatus !== 'active';
+    document.getElementById('adminStartGameBtn').disabled = GameState.questions.length < 10 || GameState.players.length === 0 || status !== 'setup';
+    document.getElementById('adminStopGameBtn').disabled = status !== 'active';
+
+    const currentIndex = Number(GameState.game?.current_question_index ?? GameState.gameState?.current_question_index ?? 0);
+    const slider = document.getElementById('currentQuestionSlider');
+    if (slider) {
+        slider.max = Math.max(1, GameState.questions.length || 10);
+        slider.value = Math.min(currentIndex + 1, Number(slider.max));
+        document.getElementById('sliderValue').textContent = slider.value;
+    }
 }
 
-// ==================== QUESTIONS MANAGEMENT ====================
-
+// ==================== QUESTIONS ====================
 function updateQuestionsList() {
     const container = document.getElementById('questionsList');
+    if (!container) return;
     container.innerHTML = '';
 
     GameState.questions.forEach((question, index) => {
         const qElement = document.createElement('div');
         qElement.className = 'question-item';
-        
         qElement.innerHTML = `
             <div class="question-item-header">
                 <div class="question-item-actions">
-                    <button 
-                        class="btn" 
-                        style="padding: 6px 12px; font-size: 13px; background: var(--light); color: var(--text-primary); border: none;"
-                        onclick="editQuestion(${index})"
-                    >
-                        ✏️ ویرایش
-                    </button>
-                    <button 
-                        class="btn btn-danger" 
-                        style="padding: 6px 12px; font-size: 13px;"
-                        onclick="deleteQuestion(${index})"
-                    >
-                        🗑️ حذف
-                    </button>
+                    <button class="btn" style="padding: 6px 12px; font-size: 13px; background: var(--light); color: var(--text-primary); border: none;" onclick="editQuestion(${index})">✏️ ویرایش</button>
+                    <button class="btn btn-danger" style="padding: 6px 12px; font-size: 13px;" onclick="deleteQuestion(${index})">🗑️ حذف</button>
                 </div>
                 <span class="question-item-number">سؤال ${index + 1}</span>
             </div>
             <div style="margin-top: 12px;">
-                <p style="font-weight: 600; margin-bottom: 10px;">${question.text}</p>
+                <p style="font-weight: 600; margin-bottom: 10px;">${escapeHtml(question.text)}</p>
                 <div class="options-list">
                     ${question.options.map((option, optIndex) => `
                         <div class="option-item">
-                            <span class="option-indicator ${optIndex === question.correctAnswer ? 'correct' : ''}">
-                                ${optIndex === question.correctAnswer ? '✓' : optIndex + 1}
-                            </span>
-                            <span>${option}</span>
-                        </div>
-                    `).join('')}
+                            <span class="option-indicator ${optIndex === question.correctAnswer ? 'correct' : ''}">${optIndex === question.correctAnswer ? '✓' : optIndex + 1}</span>
+                            <span>${escapeHtml(option)}</span>
+                        </div>`).join('')}
                 </div>
-            </div>
-        `;
-
+            </div>`;
         container.appendChild(qElement);
     });
 
-    if (GameState.questions.length === 0) {
-        container.innerHTML = `
-            <div style="text-align: center; padding: 40px; background: var(--light); border-radius: 12px;">
-                <p style="color: var(--text-secondary); margin-bottom: 20px;">
-                    🚫 هیچ سؤالی تعریف نشده است
-                </p>
-                <button 
-                    class="btn btn-primary"
-                    onclick="openAddQuestionModal()"
-                >
-                    ➕ افزودن سؤال اول
-                </button>
-            </div>
-        `;
+    if (!GameState.questions.length) {
+        container.innerHTML = `<div style="text-align: center; padding: 40px; background: var(--light); border-radius: 12px;"><p style="color: var(--text-secondary); margin-bottom: 20px;">🚫 هیچ سؤالی تعریف نشده است</p><button class="btn btn-primary" onclick="openAddQuestionModal()">➕ افزودن سؤال اول</button></div>`;
     }
 }
 
-function openAddQuestionModal() {
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>'"]/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[char]));
+}
+
+let editingQuestionId = null;
+
+function openAddQuestionModal(question = null) {
     document.getElementById('questionModal').classList.add('active');
     document.getElementById('questionForm').reset();
+    editingQuestionId = question?.id || null;
+    if (question) {
+        document.getElementById('adminQuestionText').value = question.text;
+        document.getElementById('option1').value = question.options[0];
+        document.getElementById('option2').value = question.options[1];
+        document.getElementById('option3').value = question.options[2];
+        document.getElementById('option4').value = question.options[3];
+        document.getElementById('correctAnswer').value = question.correctAnswer;
+    }
 }
 
 function closeQuestionModal() {
     document.getElementById('questionModal').classList.remove('active');
+    editingQuestionId = null;
 }
 
-document.getElementById('questionForm')?.addEventListener('submit', function(e) {
+document.getElementById('questionForm')?.addEventListener('submit', async function(e) {
     e.preventDefault();
-
-    const question = {
-        id: GameState.questions.length + 1,
-        text: document.getElementById('adminQuestionText').value,
-        options: [
-            document.getElementById('option1').value,
-            document.getElementById('option2').value,
-            document.getElementById('option3').value,
-            document.getElementById('option4').value
-        ],
-        correctAnswer: parseInt(document.getElementById('correctAnswer').value)
+    const payload = {
+        game_id: GAME_ID,
+        question_text: document.getElementById('adminQuestionText').value.trim(),
+        option_a: document.getElementById('option1').value.trim(),
+        option_b: document.getElementById('option2').value.trim(),
+        option_c: document.getElementById('option3').value.trim(),
+        option_d: document.getElementById('option4').value.trim(),
+        correct_answer: parseInt(document.getElementById('correctAnswer').value, 10)
     };
 
-    GameState.questions.push(question);
-    
-    StorageManager.save(StorageManager.KEYS.QUESTIONS, GameState.questions);
-    
-    // Broadcast to other tabs
-    syncManager.send('QUESTION_ADDED', GameState.questions);
-    
-    updateQuestionsList();
-    updateAdminDashboard();
-    closeQuestionModal();
-
-    console.log('📝 Question added:', question);
-});
-
-function deleteQuestion(index) {
-    if (confirm('آیا از حذف این سؤال اطمینان دارید؟')) {
-        GameState.questions.splice(index, 1);
-        GameState.questions.forEach((q, i) => q.id = i + 1);
-        
-        StorageManager.save(StorageManager.KEYS.QUESTIONS, GameState.questions);
-        syncManager.send('QUESTION_ADDED', GameState.questions);
-        
+    try {
+        setSyncStatus('syncing', '⏳ در حال ذخیره سؤال...');
+        if (editingQuestionId) {
+            await queryOrThrow(supabaseClient.from('questions').update(payload).eq('id', editingQuestionId).eq('game_id', GAME_ID), 'ویرایش سؤال');
+        } else {
+            const nextOrder = GameState.questions.length ? Math.max(...GameState.questions.map(q => q.questionOrder)) + 1 : 1;
+            await queryOrThrow(supabaseClient.from('questions').insert({ ...payload, question_order: nextOrder }).select().single(), 'افزودن سؤال');
+        }
+        await loadQuestions();
         updateQuestionsList();
         updateAdminDashboard();
+        closeQuestionModal();
+        setSyncStatus('synced', '✓ سؤال ذخیره شد');
+    } catch (error) {
+        reportSupabaseError('ذخیره سؤال');
+    }
+});
+
+async function deleteQuestion(index) {
+    const question = GameState.questions[index];
+    if (!question || !confirm('آیا از حذف این سؤال اطمینان دارید؟')) return;
+    try {
+        setSyncStatus('syncing', '⏳ در حال حذف سؤال...');
+        await queryOrThrow(supabaseClient.from('questions').delete().eq('id', question.id).eq('game_id', GAME_ID), 'حذف سؤال');
+        await loadQuestions();
+        for (let i = 0; i < GameState.questions.length; i++) {
+            await queryOrThrow(supabaseClient.from('questions').update({ question_order: i + 1 }).eq('id', GameState.questions[i].id), 'مرتب‌سازی سؤالات');
+        }
+        await loadQuestions();
+        updateQuestionsList();
+        updateAdminDashboard();
+        setSyncStatus('synced', '✓ سؤال حذف شد');
+    } catch (error) {
+        reportSupabaseError('حذف سؤال');
     }
 }
 
 function editQuestion(index) {
     const question = GameState.questions[index];
-    document.getElementById('adminQuestionText').value = question.text;
-    document.getElementById('option1').value = question.options[0];
-    document.getElementById('option2').value = question.options[1];
-    document.getElementById('option3').value = question.options[2];
-    document.getElementById('option4').value = question.options[3];
-    document.getElementById('correctAnswer').value = question.correctAnswer;
-    
-    openAddQuestionModal();
-    deleteQuestion(index);
+    if (question) openAddQuestionModal(question);
 }
 
 // ==================== PLAYERS MANAGEMENT ====================
-
 function updatePlayersList(filterType = 'all') {
     const tbody = document.getElementById('playersTableBody');
+    if (!tbody) return;
     tbody.innerHTML = '';
-
     let filteredPlayers = GameState.players;
+    if (filterType === 'active') filteredPlayers = GameState.players.filter(p => p.status === 'playing');
+    else if (filterType === 'eliminated') filteredPlayers = GameState.players.filter(p => p.status === 'eliminated');
 
-    if (filterType === 'active') {
-        filteredPlayers = GameState.players.filter(p => p.status === 'playing');
-    } else if (filterType === 'eliminated') {
-        filteredPlayers = GameState.players.filter(p => p.status === 'eliminated');
-    }
-
-    if (filteredPlayers.length === 0) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="5" style="text-align: center; padding: 20px; color: var(--text-secondary);">
-                    🚫 بازیکنی یافت نشد
-                </td>
-            </tr>
-        `;
+    if (!filteredPlayers.length) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; padding: 20px; color: var(--text-secondary);">🚫 بازیکنی یافت نشد</td></tr>`;
         return;
     }
-
     filteredPlayers.forEach(player => {
         const row = document.createElement('tr');
-        
-        let statusBadge = '';
-        let statusClass = '';
-        
-        if (player.status === 'waiting') {
-            statusBadge = '⏳ در انتظار';
-            statusClass = 'badge-primary';
-        } else if (player.status === 'playing') {
-            statusBadge = '▶️ در حال بازی';
-            statusClass = 'badge-success';
-        } else if (player.status === 'eliminated') {
-            statusBadge = '❌ حذف‌شده';
-            statusClass = 'badge-danger';
-        } else if (player.status === 'winner') {
-            statusBadge = '🏆 برنده';
-            statusClass = 'badge-success';
-        }
-
-        row.innerHTML = `
-            <td>${player.firstName}</td>
-            <td>${player.lastName}</td>
-            <td style="font-family: 'Courier New', monospace;">${maskPhoneNumber(player.phone)}</td>
-            <td><span class="badge ${statusClass}">${statusBadge}</span></td>
-            <td>${player.correctAnswers}</td>
-        `;
-
+        const statuses = {
+            waiting: ['⏳ در انتظار', 'badge-primary'],
+            playing: ['▶️ در حال بازی', 'badge-success'],
+            eliminated: ['❌ حذف‌شده', 'badge-danger'],
+            winner: ['🏆 برنده', 'badge-success']
+        };
+        const [statusBadge, statusClass] = statuses[player.status] || [player.status, 'badge-primary'];
+        row.innerHTML = `<td>${escapeHtml(player.firstName)}</td><td>${escapeHtml(player.lastName)}</td><td style="font-family: 'Courier New', monospace;">${maskPhoneNumber(player.phone)}</td><td><span class="badge ${statusClass}">${statusBadge}</span></td><td>${player.correctAnswers}</td>`;
         tbody.appendChild(row);
     });
 }
@@ -2193,180 +2265,198 @@ function switchPlayerView(filterType) {
     document.getElementById('viewAllBtn').classList.toggle('active', filterType === 'all');
     document.getElementById('viewActiveBtn').classList.toggle('active', filterType === 'active');
     document.getElementById('viewEliminatedBtn').classList.toggle('active', filterType === 'eliminated');
-    
     updatePlayersList(filterType);
 }
 
 // ==================== GAME CONTROL ====================
+async function adminStartGame() {
+    if (GameState.questions.length < 10) return alert('❌ باید حداقل ۱۰ سؤال تعریف شود');
+    if (!GameState.players.length) return alert('❌ باید حداقل یک بازیکن ثبت‌نام کرده باشد');
 
-function adminStartGame() {
-    if (GameState.questions.length < 10) {
-        alert('❌ باید حداقل ۱۰ سؤال تعریف شود');
-        return;
+    try {
+        setSyncStatus('syncing', '⏳ در حال شروع مسابقه...');
+        await queryOrThrow(
+            supabaseClient.from('players').update({ status: 'playing', current_question_index: 0, correct_answers: 0, eliminated_at: null, finished_at: null }).eq('game_id', GAME_ID).eq('status', 'waiting'),
+            'فعال‌سازی بازیکنان'
+        );
+        await queryOrThrow(
+            supabaseClient.from('games').update({ status: 'active', current_question_index: 0, started_at: new Date().toISOString(), finished_at: null }).eq('id', GAME_ID),
+            'شروع مسابقه'
+        );
+        await syncGameState('active', 0);
+        await refreshAllData();
+        alert('✓ مسابقه شروع شد!');
+    } catch (error) {
+        reportSupabaseError('شروع مسابقه');
     }
-
-    if (GameState.players.length === 0) {
-        alert('❌ باید حداقل یک بازیکن ثبت‌نام کرده باشد');
-        return;
-    }
-
-    GameState.players.forEach(player => {
-        if (player.status === 'waiting') {
-            player.status = 'playing';
-            player.currentQuestionIndex = 0;
-            player.correctAnswers = 0;
-        }
-    });
-
-    GameState.gameStatus = 'active';
-    GameState.adminCurrentQuestionIndex = 0;
-
-    StorageManager.save(StorageManager.KEYS.GAME_STATUS, GameState.gameStatus);
-    StorageManager.save(StorageManager.KEYS.PLAYERS, GameState.players);
-
-    // Broadcast to all tabs
-    syncManager.send('GAME_STARTED', {
-        questions: GameState.questions,
-        players: GameState.players,
-        gameStatus: GameState.gameStatus
-    });
-
-    updateAdminDashboard();
-    updatePlayersList('all');
-
-    if (GameState.currentPlayer.id) {
-        startGameForPlayer();
-    }
-
-    alert('✓ مسابقه شروع شد!');
 }
 
-function adminStopGame() {
-    if (confirm('آیا مطمئن هستید که می‌خواهید مسابقه را پایان دهید؟')) {
-        GameState.gameStatus = 'finished';
-        StorageManager.save(StorageManager.KEYS.GAME_STATUS, GameState.gameStatus);
-        syncManager.send('GAME_FINISHED', GameState.winners);
+async function adminStopGame() {
+    if (!confirm('آیا مطمئن هستید که می‌خواهید مسابقه را پایان دهید؟')) return;
+    try {
+        setSyncStatus('syncing', '⏳ در حال پایان مسابقه...');
+        await queryOrThrow(supabaseClient.from('games').update({ status: 'finished', finished_at: new Date().toISOString() }).eq('id', GAME_ID), 'پایان مسابقه');
+        await syncGameState('finished', Number(GameState.game?.current_question_index || 0));
+        await loadWinners();
+        await refreshAllData();
         finishGame();
         alert('✓ مسابقه پایان یافت');
+    } catch (error) {
+        reportSupabaseError('پایان مسابقه');
+    }
+}
+
+async function syncGameState(status, currentQuestionIndex) {
+    const existing = await loadGameStateRow();
+    const payload = { status, current_question_index: currentQuestionIndex, updated_at: new Date().toISOString() };
+    if (existing?.id) {
+        await queryOrThrow(supabaseClient.from('game_state').update(payload).eq('id', existing.id), 'به‌روزرسانی وضعیت بازی');
+    } else {
+        await queryOrThrow(supabaseClient.from('game_state').insert(payload), 'ایجاد وضعیت بازی');
+    }
+    GameState.gameState = { ...(existing || {}), ...payload };
+}
+
+async function setGlobalQuestionIndex(index) {
+    index = Number(index);
+    if (!Number.isInteger(index) || index < 0 || index >= GameState.questions.length) return;
+    try {
+        setSyncStatus('syncing', '⏳ در حال تغییر سؤال...');
+        await queryOrThrow(supabaseClient.from('games').update({ current_question_index: index }).eq('id', GAME_ID), 'تغییر سؤال فعلی');
+        await syncGameState(GameState.gameStatus, index);
+        await refreshAllData();
+    } catch (error) {
+        reportSupabaseError('تغییر سؤال فعلی');
     }
 }
 
 function startGameForPlayer() {
     if (GameState.currentPlayer.status !== 'playing') return;
-    
-    GameState.adminCurrentQuestionIndex = 0;
-    loadQuestion(0);
+    const index = Number(GameState.currentPlayer.currentQuestionIndex || 0);
+    if (index >= GameState.questions.length) return;
+    loadQuestion(index);
     switchScreen('game');
 }
 
 function loadQuestion(questionIndex) {
-    if (questionIndex >= 10) {
+    if (questionIndex >= GameState.questions.length) {
         finishGame();
         return;
     }
-
     const question = GameState.questions[questionIndex];
-    
+    if (!question) return;
     document.getElementById('currentQuestionNum').textContent = questionIndex + 1;
     document.getElementById('correctAnswersCount').textContent = GameState.currentPlayer.correctAnswers;
-    document.getElementById('remainingPlayersCount').textContent = 
-        GameState.players.filter(p => p.status === 'playing').length;
-
-    const progress = ((questionIndex + 1) / 10) * 100;
-    document.getElementById('progressBarFill').style.width = progress + '%';
-
+    document.getElementById('remainingPlayersCount').textContent = GameState.players.filter(p => p.status === 'playing').length;
+    const total = Math.max(GameState.questions.length, 10);
+    document.getElementById('progressBarFill').style.width = (((questionIndex + 1) / total) * 100) + '%';
     document.getElementById('gameQuestionText').textContent = question.text;
 
     const optionsGrid = document.getElementById('optionsGrid');
     optionsGrid.innerHTML = '';
-
     question.options.forEach((option, index) => {
         const btn = document.createElement('button');
         btn.className = 'option-btn';
         btn.textContent = option;
-        btn.onclick = () => selectAnswer(index, question.correctAnswer);
+        btn.onclick = () => selectAnswer(index, question.correctAnswer, question.id, questionIndex);
         optionsGrid.appendChild(btn);
     });
 }
 
-function selectAnswer(selectedIndex, correctIndex) {
+async function selectAnswer(selectedIndex, correctIndex, questionId, questionIndex) {
+    if (!GameState.currentPlayer.id || GameState.currentPlayer.status !== 'playing') return;
     const optionButtons = document.querySelectorAll('.option-btn');
-    
     optionButtons.forEach(btn => btn.disabled = true);
+    if (optionButtons[correctIndex]) optionButtons[correctIndex].classList.add('correct');
+    if (selectedIndex === correctIndex) optionButtons[selectedIndex].classList.add('selected');
+    else optionButtons[selectedIndex].classList.add('wrong');
 
-    optionButtons[correctIndex].classList.add('correct');
+    const isCorrect = selectedIndex === correctIndex;
+    try {
+        const existing = await queryOrThrow(
+            supabaseClient.from('answers').select('id').eq('game_id', GAME_ID).eq('player_id', GameState.currentPlayer.id).eq('question_id', questionId).maybeSingle(),
+            'بررسی پاسخ قبلی'
+        );
+        if (!existing) {
+            await queryOrThrow(supabaseClient.from('answers').insert({
+                game_id: GAME_ID,
+                player_id: GameState.currentPlayer.id,
+                question_id: questionId,
+                selected_answer: selectedIndex,
+                is_correct: isCorrect
+            }).select().single(), 'ثبت پاسخ');
+        }
 
-    if (selectedIndex === correctIndex) {
-        optionButtons[selectedIndex].classList.add('selected');
-        GameState.currentPlayer.correctAnswers++;
-        GameState.currentPlayer.currentQuestionIndex++;
-
-        setTimeout(() => {
-            if (GameState.currentPlayer.currentQuestionIndex >= 10) {
-                winGame();
+        if (isCorrect) {
+            const nextIndex = questionIndex + 1;
+            const newCorrect = GameState.currentPlayer.correctAnswers + 1;
+            if (nextIndex >= GameState.questions.length) {
+                await winGame(newCorrect);
             } else {
-                loadQuestion(GameState.currentPlayer.currentQuestionIndex);
+                const updated = await queryOrThrow(
+                    supabaseClient.from('players').update({ current_question_index: nextIndex, correct_answers: newCorrect }).eq('id', GameState.currentPlayer.id).eq('game_id', GAME_ID).select().single(),
+                    'به‌روزرسانی بازیکن'
+                );
+                GameState.currentPlayer = mapPlayer(updated);
+                await loadPlayers();
+                setTimeout(() => loadQuestion(nextIndex), 1500);
             }
-        }, 1500);
-    } else {
-        optionButtons[selectedIndex].classList.add('wrong');
-        
-        setTimeout(() => {
-            eliminatePlayer();
-        }, 1500);
+        } else {
+            setTimeout(() => eliminatePlayer(questionIndex), 1500);
+        }
+    } catch (error) {
+        reportSupabaseError('ثبت پاسخ');
+        optionButtons.forEach(btn => btn.disabled = false);
     }
-
-    StorageManager.save(StorageManager.KEYS.CURRENT_PLAYER, GameState.currentPlayer);
 }
 
-function eliminatePlayer() {
-    GameState.currentPlayer.status = 'eliminated';
-    
-    GameState.players = GameState.players.map(p => 
-        p.id === GameState.currentPlayer.id ? GameState.currentPlayer : p
-    );
+async function eliminatePlayer(questionIndex) {
+    if (!GameState.currentPlayer.id) return;
+    try {
+        const updated = await queryOrThrow(
+            supabaseClient.from('players').update({ status: 'eliminated', eliminated_at: new Date().toISOString() }).eq('id', GameState.currentPlayer.id).eq('game_id', GAME_ID).select().single(),
+            'حذف بازیکن'
+        );
+        GameState.currentPlayer = mapPlayer(updated);
+        await loadPlayers();
+        document.getElementById('eliminatedCorrectCount').textContent = GameState.currentPlayer.correctAnswers;
+        document.getElementById('eliminatedLastQuestion').textContent = questionIndex + 1;
+        switchScreen('eliminated');
+        updateAdminDashboard();
+        updatePlayersList('all');
+    } catch (error) {
+        reportSupabaseError('حذف بازیکن');
+    }
+}
 
-    StorageManager.save(StorageManager.KEYS.CURRENT_PLAYER, GameState.currentPlayer);
-    StorageManager.save(StorageManager.KEYS.PLAYERS, GameState.players);
-    syncManager.send('PLAYER_REGISTERED', GameState.players);
-
-    document.getElementById('eliminatedCorrectCount').textContent = 
-        GameState.currentPlayer.correctAnswers;
-    document.getElementById('eliminatedLastQuestion').textContent = 
-        GameState.currentPlayer.currentQuestionIndex + 1;
-
+function showEliminatedScreenFromState() {
+    const idx = Number(GameState.currentPlayer.currentQuestionIndex || 0);
+    document.getElementById('eliminatedCorrectCount').textContent = GameState.currentPlayer.correctAnswers;
+    document.getElementById('eliminatedLastQuestion').textContent = Math.max(1, idx + 1);
     switchScreen('eliminated');
-
-    updateAdminDashboard();
-    updatePlayersList('all');
-
-    console.log('❌ Player eliminated:', GameState.currentPlayer);
 }
 
-function winGame() {
-    GameState.currentPlayer.status = 'winner';
-    GameState.winners.push(GameState.currentPlayer);
+async function winGame(correctCount = GameState.currentPlayer.correctAnswers) {
+    try {
+        const updated = await queryOrThrow(
+            supabaseClient.from('players').update({ status: 'winner', correct_answers: correctCount, finished_at: new Date().toISOString() }).eq('id', GameState.currentPlayer.id).eq('game_id', GAME_ID).select().single(),
+            'ثبت برنده'
+        );
+        GameState.currentPlayer = mapPlayer(updated);
 
-    GameState.players = GameState.players.map(p => 
-        p.id === GameState.currentPlayer.id ? GameState.currentPlayer : p
-    );
-
-    StorageManager.save(StorageManager.KEYS.CURRENT_PLAYER, GameState.currentPlayer);
-    StorageManager.save(StorageManager.KEYS.PLAYERS, GameState.players);
-    StorageManager.save(StorageManager.KEYS.WINNERS, GameState.winners);
-    syncManager.send('PLAYER_REGISTERED', GameState.players);
-
-    updateAdminDashboard();
-    updatePlayersList('all');
-
-    switchScreen('waiting');
-
-    setTimeout(() => {
-        alert('🏆 تبریک! شما برنده مسابقه شدید!');
-        watchResults();
-    }, 500);
-
-    console.log('🏆 Player won:', GameState.currentPlayer);
+        const { count } = await supabaseClient.from('winners').select('*', { count: 'exact', head: true }).eq('game_id', GAME_ID);
+        const rank = Number(count || 0) + 1;
+        const alreadyWinner = await queryOrThrow(supabaseClient.from('winners').select('id').eq('game_id', GAME_ID).eq('player_id', GameState.currentPlayer.id).maybeSingle(), 'بررسی برنده');
+        if (!alreadyWinner) {
+            await queryOrThrow(supabaseClient.from('winners').insert({ game_id: GAME_ID, player_id: GameState.currentPlayer.id, rank }).select().single(), 'ذخیره برنده');
+        }
+        await loadPlayers();
+        await loadWinners();
+        switchScreen('waiting');
+        setTimeout(() => { alert('🏆 تبریک! شما برنده مسابقه شدید!'); watchResults(); }, 500);
+    } catch (error) {
+        reportSupabaseError('ثبت برنده');
+    }
 }
 
 function watchResults() {
@@ -2374,159 +2464,95 @@ function watchResults() {
     switchScreen('results');
 }
 
-function finishGame() {
+async function finishGame() {
     GameState.gameStatus = 'finished';
-    StorageManager.save(StorageManager.KEYS.GAME_STATUS, GameState.gameStatus);
+    await loadWinners().catch(() => {});
     displayWinners();
     switchScreen('results');
 }
 
 function displayWinners() {
     const winnersList = document.getElementById('winnersList');
+    if (!winnersList) return;
     winnersList.innerHTML = '';
-
-    if (GameState.winners.length === 0) {
-        winnersList.innerHTML = `
-            <div style="text-align: center; padding: 40px; background: var(--light); border-radius: 12px;">
-                <p style="color: var(--text-secondary);">
-                    🚫 هیچ برنده‌ای وجود ندارد
-                </p>
-            </div>
-        `;
+    if (!GameState.winners.length) {
+        winnersList.innerHTML = `<div style="text-align: center; padding: 40px; background: var(--light); border-radius: 12px;"><p style="color: var(--text-secondary);">🚫 هیچ برنده‌ای وجود ندارد</p></div>`;
         return;
     }
-
     GameState.winners.forEach((winner, index) => {
         const winnerElement = document.createElement('div');
         winnerElement.className = 'winner-item';
-        
-        let medal = '';
-        if (index === 0) medal = '🥇';
-        else if (index === 1) medal = '🥈';
-        else if (index === 2) medal = '🥉';
-        else medal = `${index + 1}.`;
-
-        winnerElement.innerHTML = `
-            <div class="winner-rank">${medal}</div>
-            <div class="winner-info">
-                <div class="winner-name">${winner.firstName} ${winner.lastName}</div>
-                <div class="winner-phone">${maskPhoneNumber(winner.phone)}</div>
-            </div>
-        `;
-
+        const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
+        winnerElement.innerHTML = `<div class="winner-rank">${medal}</div><div class="winner-info"><div class="winner-name">${escapeHtml(winner.firstName)} ${escapeHtml(winner.lastName)}</div><div class="winner-phone">${maskPhoneNumber(winner.phone)}</div></div>`;
         winnersList.appendChild(winnerElement);
     });
 }
 
-function backToHome() {
-    GameState.currentPlayer = {
-        id: null,
-        firstName: '',
-        lastName: '',
-        phone: '',
-        status: 'waiting',
-        currentQuestionIndex: 0,
-        correctAnswers: 0,
-        joinedAt: null,
-        selectedAnswers: []
-    };
-    
-    StorageManager.remove(StorageManager.KEYS.CURRENT_PLAYER);
-    
-    document.getElementById('registrationForm').reset();
-    document.getElementById('registrationError').classList.add('hidden');
-    
-    switchScreen('login');
-}
-
-// ==================== SIMULATION FUNCTIONS ====================
-
+// ==================== DEMO / RESET ====================
 function simulateCorrectAnswer() {
     if (GameState.currentScreen !== 'admin') return;
-    
-    if (GameState.adminCurrentQuestionIndex < 9) {
-        GameState.adminCurrentQuestionIndex++;
-        alert('✓ شبیه‌سازی: به سؤال بعدی رفت');
-    } else {
-        alert('✓ شبیه‌سازی: برنده شدید!');
-        GameState.adminCurrentQuestionIndex = 0;
-    }
+    const index = Number(GameState.game?.current_question_index || 0);
+    if (index < GameState.questions.length - 1) setGlobalQuestionIndex(index + 1);
+    else alert('✓ شبیه‌سازی: به آخرین سؤال رسیدید');
 }
 
 function simulateWrongAnswer() {
     if (GameState.currentScreen !== 'admin') return;
     alert('✗ شبیه‌سازی: حذف شدید');
-    GameState.adminCurrentQuestionIndex = 0;
 }
 
-function resetGame() {
-    GameState.gameStatus = 'setup';
-    GameState.adminCurrentQuestionIndex = 0;
-    GameState.players.forEach(p => {
-        p.status = 'waiting';
-        p.correctAnswers = 0;
-        p.currentQuestionIndex = 0;
-    });
-    GameState.winners = [];
-    
-    StorageManager.save(StorageManager.KEYS.GAME_STATUS, GameState.gameStatus);
-    StorageManager.save(StorageManager.KEYS.PLAYERS, GameState.players);
-    StorageManager.save(StorageManager.KEYS.WINNERS, GameState.winners);
-    syncManager.send('PLAYER_REGISTERED', GameState.players);
-    
-    updateAdminDashboard();
-    updatePlayersList('all');
-    alert('🔄 مسابقه ریست شد');
-}
-
-function clearAllData() {
-    if (confirm('⚠️ آیا مطمئن هستید؟ تمام داده‌ها حذف خواهند شد!')) {
-        StorageManager.clear();
-        GameState.players = [];
-        GameState.winners = [];
-        GameState.gameStatus = 'setup';
-        syncManager.send('PLAYER_REGISTERED', []);
-        alert('✓ تمام داده‌ها پاک شدند');
-        location.reload();
+async function resetGame() {
+    if (!confirm('آیا مطمئن هستید که مسابقه ریست شود؟ بازیکنان، پاسخ‌ها و برندگان به وضعیت اولیه برمی‌گردند.')) return;
+    try {
+        setSyncStatus('syncing', '⏳ در حال ریست مسابقه...');
+        await queryOrThrow(supabaseClient.from('answers').delete().eq('game_id', GAME_ID), 'حذف پاسخ‌ها');
+        await queryOrThrow(supabaseClient.from('winners').delete().eq('game_id', GAME_ID), 'حذف برندگان');
+        await queryOrThrow(supabaseClient.from('players').update({ status: 'waiting', correct_answers: 0, current_question_index: 0, eliminated_at: null, finished_at: null }).eq('game_id', GAME_ID), 'ریست بازیکنان');
+        await queryOrThrow(supabaseClient.from('games').update({ status: 'setup', current_question_index: 0, started_at: null, finished_at: null }).eq('id', GAME_ID), 'ریست مسابقه');
+        await syncGameState('setup', 0);
+        await refreshAllData();
+        alert('🔄 مسابقه ریست شد');
+    } catch (error) {
+        reportSupabaseError('ریست مسابقه');
     }
 }
 
-// ==================== EVENT LISTENERS ====================
+async function clearAllData() {
+    if (!confirm('⚠️ آیا مطمئن هستید؟ تمام بازیکنان، پاسخ‌ها، برندگان و سؤالات این مسابقه حذف خواهند شد!')) return;
+    try {
+        setSyncStatus('syncing', '⏳ در حال پاک کردن داده‌ها...');
+        await queryOrThrow(supabaseClient.from('answers').delete().eq('game_id', GAME_ID), 'حذف پاسخ‌ها');
+        await queryOrThrow(supabaseClient.from('winners').delete().eq('game_id', GAME_ID), 'حذف برندگان');
+        await queryOrThrow(supabaseClient.from('players').delete().eq('game_id', GAME_ID), 'حذف بازیکنان');
+        await queryOrThrow(supabaseClient.from('questions').delete().eq('game_id', GAME_ID), 'حذف سؤالات');
+        await queryOrThrow(supabaseClient.from('games').update({ status: 'setup', current_question_index: 0, started_at: null, finished_at: null }).eq('id', GAME_ID), 'ریست مسابقه');
+        await syncGameState('setup', 0);
+        rememberCurrentPlayerId(null);
+        alert('✓ تمام داده‌های مسابقه پاک شدند');
+        location.reload();
+    } catch (error) {
+        reportSupabaseError('پاک کردن داده‌ها');
+    }
+}
 
+// ==================== EVENTS ====================
 document.getElementById('currentQuestionSlider')?.addEventListener('input', function(e) {
     document.getElementById('sliderValue').textContent = e.target.value;
-    GameState.adminCurrentQuestionIndex = parseInt(e.target.value) - 1;
+});
+document.getElementById('currentQuestionSlider')?.addEventListener('change', function(e) {
+    setGlobalQuestionIndex(parseInt(e.target.value, 10) - 1);
 });
 
-// ==================== STARTUP ====================
-
-window.addEventListener('load', function() {
-    initializeGame();
-    updateWaitingScreen();
+window.addEventListener('load', async function() {
+    await initializeGame();
     console.log('🎮 Quiz Game Loaded');
-    console.log('📡 Sync: BroadcastChannel + LocalStorage');
+    console.log('📡 Sync: Supabase Realtime');
     console.log('🔑 Admin: admin / 123456mm');
 });
 
 window.addEventListener('beforeunload', function(e) {
-    if (GameState.gameStatus === 'active') {
-        e.preventDefault();
-        e.returnValue = '';
-    }
+    // Do not block refresh/navigation: state is persisted in Supabase.
 });
-
-// Auto-refresh admin dashboard every 2 seconds
-setInterval(() => {
-    if (GameState.isAdminMode && GameState.currentScreen === 'admin') {
-        const savedPlayers = StorageManager.load(StorageManager.KEYS.PLAYERS);
-        if (savedPlayers && JSON.stringify(savedPlayers) !== JSON.stringify(GameState.players)) {
-            GameState.players = savedPlayers;
-            updateAdminDashboard();
-            updatePlayersList('all');
-        }
-    }
-}, 2000);
-
 </script>
 
 </body>
