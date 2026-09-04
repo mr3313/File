@@ -6,7 +6,7 @@
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Permissions-Policy" content="camera=(), microphone=(), geolocation=()">
 <meta name="description" content="مبسا — مسابقه برخط سوادآموزی بزرگسالان با همگام‌سازی زنده و زمان‌بندی مشترک">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; connect-src 'self' https://*.supabase.co wss://*.supabase.co; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https:; font-src 'self' data: https:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; connect-src 'self' https://*.supabase.co wss://*.supabase.co; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https:; font-src 'self' data: https://cdn.jsdelivr.net; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';">
 <!--
 ================================================================================
 راهنمای سرور (Supabase)
@@ -2242,8 +2242,9 @@ async function refreshAllData() {
 
 // ==================== REALTIME (بهینه‌شده) ====================
 // هر event بازیکنان دیگر بلافاصله refetch نمی‌زند؛ event ها در یک صف جمع و
-// حداکثر هر ۱.۵ ثانیه یک بار پردازش می‌شوند. event مربوط به «خود بازیکن»
-// استثناست و بلافاصله پردازش می‌شود (شروع بازی نباید منتظر بماند).
+// حداکثر هر ۱.۵ ثانیه یک بار پردازش می‌شوند. دو استثنا:
+//  ۱) INSERT بازیکن جدید (ثبت‌نام) → فوری؛ مدیر باید همان لحظه ببیند.
+//  ۲) تغییر وضعیت خود بازیکن → فوری؛ شروع مسابقه نباید منتظر بماند.
 const PLAYERS_REFRESH_THROTTLE_MS = 1500;
 let playersRefreshTimer = null;
 
@@ -2261,7 +2262,9 @@ function schedulePlayersRefresh(immediate = false) {
 }
 
 function stopRealtime() {
-    GameState.realtimeChannels.forEach(channel => supabaseClient.removeChannel(channel));
+    GameState.realtimeChannels.forEach(channel => {
+        try { supabaseClient.removeChannel(channel); } catch (_) {}
+    });
     GameState.realtimeChannels = [];
 }
 
@@ -2282,9 +2285,12 @@ function startRealtime() {
             updateAdminDashboard();
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: `game_id=eq.${GAME_ID}` }, payload => {
-            // تغییر وضعیت خود بازیکن = فوری؛ تغییر بقیه = تجمیع‌شده و کم‌هزینه
+            const eventType = payload?.eventType || payload?.type;
             const changedId = payload?.new?.id || payload?.old?.id;
-            schedulePlayersRefresh(changedId === GameState.currentPlayer.id);
+            // INSERT (ثبت‌نام جدید) و تغییر وضعیت خود بازیکن = فوری؛ بقیه = تجمیع‌شده
+            const isMyChange = changedId === GameState.currentPlayer.id;
+            const isInsert = eventType === 'INSERT';
+            schedulePlayersRefresh(isMyChange || isInsert);
         })
         // ⚡ event های جدول answers حذف شد: هر پاسخِ هر بازیکن قبلاً یک refetch کامل
         // راه می‌انداخت؛ نتیجه‌ی هر بازیکن از RPC خودش می‌آید و فهرست بازیکنان با
@@ -2320,6 +2326,21 @@ function startRealtime() {
     GameState.realtimeChannels.push(channel);
 }
 
+// ⭐ رفع باگ اصلی پنل مدیریت:
+// کانال Realtime در لحظه‌ی باز شدن صفحه با توکن «ناشناس (anon)» subscribe می‌شود.
+// بعد از لاگین مدیر، JWT عوض می‌شود ولی کانال قدیمی با توکن قبلی می‌ماند؛
+// بنابراین RLS اجازه‌ی دریافت event های جدول players را نمی‌داد و پنل مدیر
+// بدون Refresh هرگز به‌روز نمی‌شد. راه‌حل: با هر تغییر وضعیت احراز هویت
+// (ورود/خروج مدیر) کانال‌ها را ببندیم و با توکن جدید دوباره subscribe کنیم.
+async function restartRealtime() {
+    try {
+        startRealtime();
+        console.log('📡 Realtime با توکن تازه بازسازی شد');
+    } catch (error) {
+        console.warn('restartRealtime:', error);
+    }
+}
+
 async function refreshPlayersOnly() {
     try {
         await loadPlayers();
@@ -2327,8 +2348,29 @@ async function refreshPlayersOnly() {
         updatePlayersList('all');
         updateWaitingScreen();
         updateGameStatsOnly();
+        // تغییر وضعیت خود بازیکن (از مسیر event یا polling مدیر) را اعمال کن؛
+        // این مسیر پشتیبانِ sync_player_progress است و idempotent اجرا می‌شود.
+        applyCurrentPlayerStatusChange();
     } catch (error) {
         reportSupabaseError('به‌روزرسانی بازیکنان', error);
+    }
+}
+
+function applyCurrentPlayerStatusChange() {
+    if (!GameState.currentPlayer.id) return;
+    const me = GameState.players.find(p => p.id === GameState.currentPlayer.id);
+    if (!me) return;
+    const previousStatus = GameState.currentPlayer.status;
+    if (me.status === previousStatus) return;
+
+    GameState.currentPlayer = { ...GameState.currentPlayer, ...me };
+    if (me.status === 'playing' && GameState.gameStatus === 'active' &&
+        (GameState.currentScreen !== 'game' || activeQuestionIndex === null)) {
+        startGameForPlayer();
+    } else if (me.status === 'eliminated') {
+        forceEliminatedView();
+    } else if (me.status === 'winner') {
+        watchResults();
     }
 }
 
@@ -2339,22 +2381,6 @@ async function refreshGameStateOnly() {
         if (GameState.game) GameState.gameStatus = GameState.game.status;
     } catch (error) {
         reportSupabaseError('به‌روزرسانی وضعیت بازی', error);
-    }
-}
-
-function handlePlayerRealtimeChange() {
-    updateAllViews();
-    if (GameState.currentPlayer.id) {
-        const me = GameState.players.find(p => p.id === GameState.currentPlayer.id);
-        if (me) {
-            const previousStatus = GameState.currentPlayer.status;
-            GameState.currentPlayer = { ...GameState.currentPlayer, ...me };
-            if (previousStatus !== me.status) {
-                if (me.status === 'playing' && GameState.gameStatus === 'active') startGameForPlayer();
-                if (me.status === 'eliminated') forceEliminatedView();
-                if (me.status === 'winner') watchResults();
-            }
-        }
     }
 }
 
@@ -2472,6 +2498,33 @@ function stopPlayerStartWatcher() {
     playerStartWatcher = null;
 }
 
+// ==================== ADMIN FALLBACK POLLING ====================
+// پنل مدیر به Realtime وابسته‌ی مطلق نیست: حتی اگر اتصال زنده قطع شود یا
+// event ای از دست برود، هر ۴ ثانیه (فقط وقتی پنل باز و صفحه مرئی است) یک
+// select سبک از بازیکنان می‌زند تا ثبت‌نام‌ها و وضعیت‌ها همیشه تازه باشند.
+let adminPollingTimer = null;
+const ADMIN_POLL_INTERVAL_MS = 4000;
+
+function startAdminPolling() {
+    stopAdminPolling();
+    adminPollingTimer = setInterval(() => {
+        if (document.hidden) return;
+        if (!GameState.isAdminMode || GameState.currentScreen !== 'admin') return;
+        // اگر مدیری روی tab بازیکنان یا نمای کلی است، داده‌ها را تازه کن.
+        Promise.all([loadPlayers(), loadGame()])
+            .then(() => {
+                updateAdminDashboard();
+                updatePlayersList('all');
+            })
+            .catch(error => console.warn('Admin polling:', error));
+    }, ADMIN_POLL_INTERVAL_MS);
+}
+
+function stopAdminPolling() {
+    if (adminPollingTimer) clearInterval(adminPollingTimer);
+    adminPollingTimer = null;
+}
+
 // ==================== ELIMINATION VIEW LOCK ====================
 function forceEliminatedView() {
     stopQuestionTimer();
@@ -2531,14 +2584,29 @@ async function restoreAdminSession() {
     return false;
 }
 
-supabaseClient.auth.onAuthStateChange((_event, session) => {
+supabaseClient.auth.onAuthStateChange(async (event, session) => {
     const user = session?.user;
+    const wasAdmin = GameState.isAdminMode;
     if (!user || user.app_metadata?.role !== 'admin') {
         GameState.adminUser = null;
         GameState.isAdminMode = false;
     } else {
         GameState.adminUser = user;
         GameState.isAdminMode = true;
+    }
+
+    // ⭐ با تغییر هویت (ورود/خروج مدیر) کانال Realtime باید با توکن تازه بازسازی شود؛
+    // در غیر این صورت کانال قدیمی با توکن قبلی event ها را دریافت نمی‌کند.
+    if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+        await restartRealtime();
+    }
+
+    if (GameState.isAdminMode && !wasAdmin) {
+        startAdminPolling();
+        refreshAllData();
+    }
+    if (!GameState.isAdminMode && wasAdmin) {
+        stopAdminPolling();
     }
 });
 
@@ -2557,6 +2625,8 @@ async function initializeGame() {
         startRealtime();
         updateAllViews();
         startPlayerStartWatcher();
+
+        if (GameState.isAdminMode) startAdminPolling();
 
         if (GameState.currentPlayer.id) {
             if (GameState.currentPlayer.status === 'playing' && GameState.gameStatus === 'active') {
@@ -2593,6 +2663,15 @@ function switchScreen(screenName) {
     if (targetScreen) {
         targetScreen.classList.add('active');
         GameState.currentScreen = screenName;
+    }
+    // ورود به پنل مدیریت: یک refresh فوری برای دیده شدن آخرین وضعیت بدون نیاز به رفرش دستی
+    if (screenName === 'admin') {
+        Promise.all([loadPlayers(), loadGame()])
+            .then(() => {
+                updateAdminDashboard();
+                updatePlayersList('all');
+            })
+            .catch(error => console.warn('Admin screen refresh:', error));
     }
 }
 
@@ -2716,8 +2795,12 @@ document.getElementById('adminLoginForm')?.addEventListener('submit', async func
 
         GameState.adminUser = data.user;
         GameState.isAdminMode = true;
+        // ⭐ کانال Realtime با توکن مدیر بازسازی می‌شود (در onAuthStateChange هم انجام
+        // می‌شود؛ اینجا برای قطعیت بلافاصله بعد از لاگین هم اجرا می‌کنیم).
+        await restartRealtime();
         await loadGame();
         await Promise.all([loadQuestions(), loadPlayers(), loadWinners()]);
+        startAdminPolling();
         switchScreen('admin');
         updateAdminDashboard();
         updateQuestionsList();
@@ -2726,6 +2809,7 @@ document.getElementById('adminLoginForm')?.addEventListener('submit', async func
     } catch (error) {
         GameState.adminUser = null;
         GameState.isAdminMode = false;
+        stopAdminPolling();
         const message = error?.message || error?.error_description || 'خطای نامشخص';
         showError('adminLoginError', `❌ ${message}`);
         console.error('Admin auth error:', error);
@@ -2737,6 +2821,9 @@ async function exitAdminMode() {
     try { await supabaseClient.auth.signOut(); } catch (_) {}
     GameState.adminUser = null;
     GameState.isAdminMode = false;
+    stopAdminPolling();
+    // کانال Realtime به توکن ناشناس برمی‌گردد تا مسیر بازیکنان عادی سالم بماند.
+    await restartRealtime();
     switchScreen('login');
 }
 
@@ -3560,6 +3647,15 @@ window.addEventListener('load', async function() {
 document.addEventListener('visibilitychange', function() {
     if (!document.hidden) {
         if (GameState.currentPlayer.id) checkPlayerStartState(true);
+        // برگشت به پنل مدیر: بلافاصله داده‌ها را تازه کن تا منتظر polling بعدی نماند.
+        if (GameState.isAdminMode && GameState.currentScreen === 'admin') {
+            Promise.all([loadPlayers(), loadGame()])
+                .then(() => {
+                    updateAdminDashboard();
+                    updatePlayersList('all');
+                })
+                .catch(error => console.warn('Admin visibility refresh:', error));
+        }
 
         if (GameState.currentScreen === 'game' && activeQuestionIndex !== null) {
             const q = GameState.questions[activeQuestionIndex];
@@ -3582,6 +3678,8 @@ window.addEventListener('pageshow', function() {
 window.addEventListener('online', function() {
     if (GameState.currentPlayer.id) checkPlayerStartState(true);
     syncServerClock();
+    // اتصال دوباره اینترنت: کانال Realtime ممکن است قفل شده باشد؛ بازسازی کن.
+    restartRealtime();
 });
 
 window.addEventListener('beforeunload', function() {
