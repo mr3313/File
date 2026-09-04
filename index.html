@@ -6,94 +6,26 @@
 <meta http-equiv="X-Content-Type-Options" content="nosniff">
 <meta http-equiv="Permissions-Policy" content="camera=(), microphone=(), geolocation=()">
 <meta name="description" content="مبسا — مسابقه برخط سوادآموزی بزرگسالان با همگام‌سازی زنده و زمان‌بندی مشترک">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; connect-src 'self' https://*.supabase.co wss://*.supabase.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; connect-src 'self' https://*.supabase.co wss://*.supabase.co; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https:; font-src 'self' data: https:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';">
 <!--
 ================================================================================
-راهنمای سرور (Supabase) — مهم
+راهنمای سرور (Supabase)
 ================================================================================
-برای اینکه «حذف خودکار بازیکنان بی‌پاسخ» سمت سرور هم تضمین شود (حتی اگر مرورگر
-بازیکن بسته شده باشد)، تابع زیر را یک‌بار در SQL Editor داشبورد Supabase اجرا کنید.
-تا وقتی این تابع ساخته نشده، فایل بدون خطا با منطق قدیمی (سمت کلاینت) کار می‌کند.
+۱) تابع sync_player_progress قبلاً نصب شده و نیازی به اجرای مجدد ندارد.
 
-create or replace function public.sync_player_progress(
-  p_game_id uuid,
-  p_player_id uuid,
-  p_player_token text
-) returns json
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_game_status text;
-  v_player      players%rowtype;
-  v_q           questions%rowtype;
-  v_deadline    timestamptz;
-  v_started     timestamptz;
-begin
-  select status into v_game_status from games where id = p_game_id;
-  if not found then
-    return json_build_object('game_status', 'setup', 'player', null);
-  end if;
+۲) اختیاری (فقط اگر تعداد بازیکنان زیاد شد، برای سبک‌تر شدن کوئری‌ها):
+در SQL Editor یک‌بار اجرا کنید:
 
-  if p_player_id is null or p_player_token is null then
-    return json_build_object('game_status', v_game_status, 'player', null);
-  end if;
-
-  select * into v_player from players
-   where id = p_player_id and game_id = p_game_id and player_token = p_player_token;
-  if not found then
-    return json_build_object('game_status', v_game_status, 'player', null);
-  end if;
-
-  if v_game_status = 'active' and v_player.status = 'playing' then
-    v_started := coalesce(
-      (select started_at from games where id = p_game_id), now()
-    );
-
-    loop
-      select * into v_q from questions
-       where game_id = p_game_id
-         and question_order = v_player.current_question_index + 1;
-      exit when v_q.id is null;
-
-      v_deadline := v_started
-        + (interval '1 second') * (
-            select coalesce(sum(greatest(time_limit_seconds, 5)), 0)
-            from questions
-            where game_id = p_game_id
-              and question_order <= v_player.current_question_index
-          )
-        + (greatest(v_q.time_limit_seconds, 5)) * (interval '1 second');
-
-      exit when v_deadline > now();  -- پنجره سؤال جاری هنوز باز است
-
-      -- پنجره گذشته و پاسخی ثبت نشده ⇒ حذف سمت سرور
-      update players
-         set status = 'eliminated',
-             eliminated_at = v_deadline
-       where id = v_player.id;
-
-      select * into v_player from players where id = v_player.id;
-      exit;
-    end loop;
-  end if;
-
-  return json_build_object('game_status', v_game_status, 'player', to_json(v_player));
-end;
-$$;
-
-grant execute on function public.sync_player_progress(uuid, uuid, text) to anon, authenticated;
-
-توجه: اگر نام ستون توکن در جدول players چیز دیگری است (مثلاً auth_token)،
-آن را در SQL بالا متناسب با اسکیمای خودتان تغییر دهید.
+create index if not exists idx_players_game on players(game_id);
+create index if not exists idx_answers_game on answers(game_id);
+create index if not exists idx_questions_game_order on questions(game_id, question_order);
 ================================================================================
 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🎮 مبسا | مسابقه برخط سواد افزا</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- فونت از jsDelivr (سریع‌تر و پایدارتر از Google Fonts) -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet">
     <style>
 
         /* ==================== BASE STYLES ==================== */
@@ -1970,7 +1902,6 @@ const SUPABASE_KEY = "sb_publishable_5xvLKeMgxTgcQyV78u0NBw_MHrdfp0d";
 const GAME_ID = "b60198f0-6d4b-4df2-ae4d-21d920c80092";
 
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-// The registration uses INSERT ... SELECT, so the players table must also have a SELECT policy for anon/authenticated.
 
 // ==================== GLOBAL STATE ====================
 const GameState = {
@@ -1992,16 +1923,11 @@ const GameState = {
     questions: [],
     players: [],
     winners: [],
-    // امنیت مدیر فقط با Supabase Auth + RLS انجام می‌شود.
-    // هیچ رمز عبوری در فایل HTML ذخیره نمی‌شود.
     adminUser: null,
     realtimeChannels: []
 };
 
 const PLAYER_POINTER_KEY = 'quiz_current_player_id';
-
-// The browser keeps only a lightweight identity pointer in a cookie.
-// Supabase remains the source of truth for every game record.
 const PLAYER_TOKEN_KEY = 'quiz_player_token';
 
 function rememberCurrentPlayer(id, token) {
@@ -2013,12 +1939,6 @@ function rememberCurrentPlayer(id, token) {
         document.cookie = `${PLAYER_TOKEN_KEY}=; Max-Age=0; Path=/; SameSite=Strict`;
     }
 }
-function rememberCurrentPlayerId(id) {
-    // Backward-compatible helper.
-    if (!id) return rememberCurrentPlayer(null, null);
-    const token = getRememberedPlayerToken();
-    if (token) rememberCurrentPlayer(id, token);
-}
 function getRememberedPlayerId() {
     const match = document.cookie.match(new RegExp(`(?:^|; )${PLAYER_POINTER_KEY}=([^;]*)`));
     return match ? decodeURIComponent(match[1]) : null;
@@ -2029,9 +1949,6 @@ function getRememberedPlayerToken() {
 }
 
 // ==================== SERVER CLOCK SYNC ====================
-// زمان‌بندی مشترک سؤالات بر مبنای games.started_at است؛ اگر ساعت گوشی بازیکن
-// با ساعت سرور اختلاف داشته باشد، همه در یک لحظه واحد وارد سؤال نمی‌شوند.
-// این تابع اختلاف ساعت دستگاه با سرور را اندازه می‌گیرد و در محاسبات اعمال می‌کند.
 let serverClockOffsetMs = 0;
 
 async function syncServerClock() {
@@ -2048,9 +1965,7 @@ async function syncServerClock() {
         if (Number.isFinite(serverMs)) {
             serverClockOffsetMs = serverMs - Date.now();
         }
-    } catch (_) {
-        // اگر سربرگ Date در دسترس نبود، ساعت دستگاه مبنا می‌ماند (رفتار قبلی).
-    }
+    } catch (_) {}
 }
 
 function nowMs() {
@@ -2079,14 +1994,11 @@ function clearError(elementId) {
 
 function reportSupabaseError(context, error, elementId = null) {
     console.error(`❌ ${context}:`, error);
-
     const message = error?.message || error?.error_description || 'خطای نامشخص';
     const code = error?.code ? ` [${error.code}]` : '';
     const details = error?.details ? ` — ${error.details}` : '';
     const hint = error?.hint ? ` — راهنما: ${error.hint}` : '';
     const fullMessage = `${context}: ${message}${code}${details}${hint}`;
-
-    // خطای واقعی Supabase برای تشخیص RLS / RPC / FK در UI نمایش داده می‌شود.
     setSyncStatus('error', `⚠️ ${message}`);
     if (elementId) showError(elementId, `❌ ${fullMessage}`);
     else alert(`❌ ${fullMessage}`);
@@ -2114,7 +2026,6 @@ function mapQuestion(row) {
         id: row.id,
         text: row.question_text,
         options: [row.option_a, row.option_b, row.option_c, row.option_d],
-        // Correct answers are loaded only for an authenticated admin.
         correctAnswer: row.correct_answer == null ? null : Number(row.correct_answer),
         questionOrder: Number(row.question_order),
         timeLimitSeconds: Math.max(5, Number(row.time_limit_seconds || 30))
@@ -2209,9 +2120,6 @@ async function loadCurrentPlayer() {
 }
 
 // ==================== SERVER-SIDE PROGRESS / TIMEOUT ENFORCER ====================
-// این RPC (پس از اجرای SQL داخل کامنت بالای فایل) وضعیت واقعی بازی و بازیکن را
-// در «یک» درخواست برمی‌گرداند و اگر پنجره سؤالی گذشته و پاسخی ثبت نشده باشد،
-// بازیکن را سمت سرور حذف می‌کند — حتی اگر مرورگرش مدت‌ها بسته بوده باشد.
 let syncProgressRpcMissing = false;
 
 async function syncPlayerProgress() {
@@ -2232,7 +2140,6 @@ async function syncPlayerProgress() {
 
         GameState.gameStatus = data.game_status || GameState.gameStatus;
         if (data.game_status === 'active' && GameState.game) {
-            // status تازه است؛ current_question_index محلی دست‌نخورده می‌ماند.
             GameState.game.status = 'active';
         }
 
@@ -2242,7 +2149,6 @@ async function syncPlayerProgress() {
         const player = mapPlayer(data.player);
         GameState.currentPlayer = { ...GameState.currentPlayer, ...player };
 
-        // تغییر وضعیت در حین غیبت بازیکن هم بلافاصله در UI اعمال می‌شود.
         if (previousStatus !== player.status) {
             if (player.status === 'eliminated') forceEliminatedView();
             else if (player.status === 'winner') { await loadWinners().catch(() => {}); watchResults(); }
@@ -2251,7 +2157,6 @@ async function syncPlayerProgress() {
     } catch (error) {
         const message = error?.message || '';
         const code = error?.code || '';
-        // تابع هنوز در Supabase ساخته نشده ⇒ بی‌صدا به مسیر قدیمی برمی‌گردیم.
         if (code === 'PGRST202' || code === '404' || /not found|does not exist/i.test(message)) {
             syncProgressRpcMissing = true;
             console.info('ℹ️ sync_player_progress در Supabase یافت نشد؛ منطق جایگزین فعال است.');
@@ -2305,6 +2210,7 @@ async function loadWinners() {
     }
     return GameState.winners;
 }
+
 async function loadGameStateRow() {
     if (!GameState.isAdminMode) {
         GameState.gameState = null;
@@ -2321,8 +2227,6 @@ async function loadGameStateRow() {
 async function refreshAllData() {
     setSyncStatus('syncing', '⏳ در حال همگام‌سازی...');
     try {
-        // برندگان فقط وقتی واقعاً لازم است بارگذاری می‌شوند (مسابقه تمام‌شده یا پنل مدیر)
-        // تا هر بار بارگذاری صفحه، یک query اضافه به Supabase زده نشود.
         const tasks = [loadGame(), loadQuestions(), loadPlayers()];
         if (GameState.isAdminMode) tasks.push(loadGameStateRow());
         if (GameState.isAdminMode || GameState.gameStatus === 'finished') tasks.push(loadWinners());
@@ -2336,7 +2240,26 @@ async function refreshAllData() {
     }
 }
 
-// ==================== REALTIME ====================
+// ==================== REALTIME (بهینه‌شده) ====================
+// هر event بازیکنان دیگر بلافاصله refetch نمی‌زند؛ event ها در یک صف جمع و
+// حداکثر هر ۱.۵ ثانیه یک بار پردازش می‌شوند. event مربوط به «خود بازیکن»
+// استثناست و بلافاصله پردازش می‌شود (شروع بازی نباید منتظر بماند).
+const PLAYERS_REFRESH_THROTTLE_MS = 1500;
+let playersRefreshTimer = null;
+
+function schedulePlayersRefresh(immediate = false) {
+    if (immediate) {
+        if (playersRefreshTimer) { clearTimeout(playersRefreshTimer); playersRefreshTimer = null; }
+        refreshPlayersOnly();
+        return;
+    }
+    if (playersRefreshTimer) return; // یکی در صف است؛ بقیه event ها ادغام می‌شوند
+    playersRefreshTimer = setTimeout(() => {
+        playersRefreshTimer = null;
+        refreshPlayersOnly();
+    }, PLAYERS_REFRESH_THROTTLE_MS);
+}
+
 function stopRealtime() {
     GameState.realtimeChannels.forEach(channel => supabaseClient.removeChannel(channel));
     GameState.realtimeChannels = [];
@@ -2347,12 +2270,8 @@ function startRealtime() {
 
     const channel = supabaseClient
         .channel(`quiz-game-${GAME_ID}`)
-        // فقط داده‌ای را که واقعاً تغییر کرده دوباره می‌خوانیم؛ refreshAllData
-        // در هر event چندین query به Supabase می‌فرستاد و در مسابقه شلوغ فشار ایجاد می‌کرد.
         .on('postgres_changes', { event: '*', schema: 'public', table: 'games', filter: `id=eq.${GAME_ID}` }, async () => {
             await refreshGameStateOnly();
-            // این event، سیگنال اصلی شروع مسابقه برای همه گوشی‌هاست.
-            // وضعیت بازیکن را هم همان لحظه می‌خوانیم تا منتظر event جداگانه players نمانیم.
             if (GameState.currentPlayer.id) {
                 const synced = await syncPlayerProgress();
                 if (!synced) {
@@ -2362,13 +2281,14 @@ function startRealtime() {
             await handleGameStatusChange();
             updateAdminDashboard();
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: `game_id=eq.${GAME_ID}` }, async payload => {
-            await refreshPlayersOnly();
-            handlePlayerRealtimeChange(payload);
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: `game_id=eq.${GAME_ID}` }, payload => {
+            // تغییر وضعیت خود بازیکن = فوری؛ تغییر بقیه = تجمیع‌شده و کم‌هزینه
+            const changedId = payload?.new?.id || payload?.old?.id;
+            schedulePlayersRefresh(changedId === GameState.currentPlayer.id);
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'answers', filter: `game_id=eq.${GAME_ID}` }, async () => {
-            await refreshPlayersOnly();
-        })
+        // ⚡ event های جدول answers حذف شد: هر پاسخِ هر بازیکن قبلاً یک refetch کامل
+        // راه می‌انداخت؛ نتیجه‌ی هر بازیکن از RPC خودش می‌آید و فهرست بازیکنان با
+        // event های players (تجمیع‌شده) به‌روز می‌شود.
         .on('postgres_changes', { event: '*', schema: 'public', table: 'questions', filter: `game_id=eq.${GAME_ID}` }, async () => {
             await loadQuestions();
             updateQuestionsList();
@@ -2392,7 +2312,6 @@ function startRealtime() {
             }
             if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
                 setSyncStatus('error', '⚠️ اتصال زنده قطع شد؛ همگام‌سازی خودکار فعال است');
-                // Realtime فقط یک مسیر کمکی است؛ مسیر polling بدون آن هم کار می‌کند.
                 startPlayerStartWatcher();
                 checkPlayerStartState(true);
             }
@@ -2407,6 +2326,7 @@ async function refreshPlayersOnly() {
         updateAdminDashboard();
         updatePlayersList('all');
         updateWaitingScreen();
+        updateGameStatsOnly();
     } catch (error) {
         reportSupabaseError('به‌روزرسانی بازیکنان', error);
     }
@@ -2440,8 +2360,6 @@ function handlePlayerRealtimeChange() {
 
 async function handleGameStatusChange() {
     if (GameState.gameStatus === 'active' && GameState.currentPlayer.id) {
-        // وضعیت خود بازیکن را با RPC امن (sync_player_progress) می‌خوانیم؛
-        // در نبود آن RPC، به مسیر قبلی (get_player_by_token) برمی‌گردیم.
         try {
             const synced = await syncPlayerProgress();
             const me = synced?.player || await loadCurrentPlayer();
@@ -2456,7 +2374,6 @@ async function handleGameStatusChange() {
             console.warn('Realtime player state:', error);
         }
 
-        // fallback برای حالتی که RPC لحظه‌ای دیر پاسخ دهد.
         const me = GameState.players.find(p => p.id === GameState.currentPlayer.id);
         if (me) {
             GameState.currentPlayer = { ...GameState.currentPlayer, ...me };
@@ -2469,28 +2386,23 @@ async function handleGameStatusChange() {
     }
 }
 
-// اگر Realtime در مرورگر بازیکن دیر وصل شود یا رویداد شروع مسابقه را از دست بدهد،
-// این watcher وضعیت بازی و خود بازیکن را کوتاه‌مدت بررسی می‌کند تا شروع بازی نیاز
-// به ریست دستی یا رفرش صفحه نداشته باشد.
+// ==================== POLLING هوشمند ====================
 let playerStartWatcher = null;
 let playerStartCheckInFlight = false;
 let playerStartLastCheckAt = 0;
-const PLAYER_POLL_INTERVAL_MS = 1200; // سبک: هر دور فقط یک RPC واحد
+const PLAYER_POLL_INTERVAL_MS = 2000; // سبک: هر ۲ ثانیه فقط یک RPC واحد
 
 async function checkPlayerStartState(force = false) {
     if (!GameState.currentPlayer.id) return;
     if (GameState.currentPlayer.status === 'winner' || GameState.currentPlayer.status === 'eliminated') return;
     if (playerStartCheckInFlight) return;
 
-    // جلوگیری از درخواست‌های هم‌زمان؛ force فقط برای focus/pageshow/online و Realtime است.
     const now = Date.now();
     if (!force && now - playerStartLastCheckAt < 200) return;
     playerStartLastCheckAt = now;
     playerStartCheckInFlight = true;
 
     try {
-        // مسیر ۱ (سریع): یک RPC واحد که هم وضعیت بازی و هم وضعیت بازیکن را می‌دهد
-        // و سمت سرور بازیکنان بی‌پاسخِ گذشته از مهلت را حذف می‌کند.
         const synced = await syncPlayerProgress();
         if (synced) {
             if (GameState.currentPlayer.status === 'eliminated') { forceEliminatedView(); return; }
@@ -2509,7 +2421,6 @@ async function checkPlayerStartState(force = false) {
             return;
         }
 
-        // مسیر ۲ (جایگزین، وقتی RPC سمت سرور ساخته نشده است): همان منطق قبلی.
         const game = await loadGame();
         if (!game) return;
         GameState.gameStatus = game.status || 'setup';
@@ -2520,8 +2431,6 @@ async function checkPlayerStartState(force = false) {
         }
         if (GameState.gameStatus !== 'active') return;
 
-        // games.active شدن سیگنال اصلی است. سپس وضعیت امن خود بازیکن را می‌خوانیم؛
-        // بنابراین گم شدن event جدول players مانع شروع نمی‌شود.
         const player = await loadCurrentPlayer();
         if (!player) return;
         GameState.currentPlayer = player;
@@ -2543,18 +2452,12 @@ async function checkPlayerStartState(force = false) {
 function startPlayerStartWatcher() {
     if (playerStartWatcher || !GameState.currentPlayer.id) return;
 
-    // فوراً بررسی کن؛ برای شروع مسابقه به Realtime وابسته نباش.
     checkPlayerStartState(true);
 
-    // Polling مداوم در صفحه انتظار: اگر Realtime یک event را از دست بدهد،
-    // حداکثر حدود یک ثانیه بعد از active شدن games بازیکن وارد می‌شود.
-    // هر دور polling فقط «یک» درخواست سبک می‌فرستد (نه سه query).
     playerStartWatcher = setInterval(() => {
-        if (document.hidden) return; // در تب پنهان، شبکه و باتری هدر نرود؛ برگشت به صفحه چک کامل می‌کند.
+        if (document.hidden) return;
         if (!GameState.currentPlayer.id || GameState.gameStatus === 'finished') return;
 
-        // در صفحه سؤال فعال، polling سنگین لازم نیست؛ اما با کوچک‌ترین برگشت به انتظار
-        // یا از دست رفتن state، دوباره وضعیت واقعی Supabase بررسی می‌شود.
         if (GameState.currentScreen === 'game' &&
             GameState.gameStatus === 'active' &&
             GameState.currentPlayer.status === 'playing' &&
@@ -2570,8 +2473,6 @@ function stopPlayerStartWatcher() {
 }
 
 // ==================== ELIMINATION VIEW LOCK ====================
-// بازیکن حذف‌شده هرگز نباید سؤال‌های بعدی را ببیند؛ این تابع صفحه سؤال را
-// کامل می‌بندد (تایمر، گزینه‌ها و state پاک می‌شوند) و صفحه حذف را نشان می‌دهد.
 function forceEliminatedView() {
     stopQuestionTimer();
     activeQuestionIndex = null;
@@ -2597,12 +2498,19 @@ function updateAllViews() {
     updateCurrentGameQuestionIfNeeded();
 }
 
+// شمارنده‌های هدر بازی فقط وقتی صفحه بازی فعال است به‌روز شوند (بدون رندر اضافه)
+function updateGameStatsOnly() {
+    if (GameState.currentScreen !== 'game') return;
+    const correctEl = document.getElementById('correctAnswersCount');
+    const remainingEl = document.getElementById('remainingPlayersCount');
+    if (correctEl) correctEl.textContent = GameState.currentPlayer.correctAnswers;
+    if (remainingEl) remainingEl.textContent = GameState.players.filter(p => p.status === 'playing').length;
+}
+
 function updateCurrentGameQuestionIfNeeded() {
     if (GameState.currentScreen !== 'game' || !GameState.currentPlayer.id) return;
     if (GameState.currentPlayer.status !== 'playing') return;
 
-    // submit_answer_secure ممکن است current_question_index بازیکن را فوراً جلو ببرد.
-    // تا پایان زمان سؤال فعلی، UI نباید این تغییر دیتابیس را روی صفحه اعمال کند.
     if (activeQuestionIndex !== null && !activeQuestionTransitioned) return;
 
     const index = Number(GameState.currentPlayer.currentQuestionIndex || 0);
@@ -2636,11 +2544,9 @@ supabaseClient.auth.onAuthStateChange((_event, session) => {
 
 async function initializeGame() {
     try {
-        // سنکرون‌سازی ساعت با سرور برای زمان‌بندی مشترک و دقیق سؤالات.
         syncServerClock();
 
         await restoreAdminSession();
-        // بارگذاری بازیکن ذخیره‌شده هم‌زمان با بقیه داده‌ها انجام می‌شود (سریع‌تر).
         await Promise.all([refreshAllData(), loadCurrentPlayer()]);
 
         if (GameState.currentPlayer.id) {
@@ -2665,6 +2571,7 @@ async function initializeGame() {
                 document.getElementById('waitingPlayerName').textContent = `${GameState.currentPlayer.firstName} ${GameState.currentPlayer.lastName}`;
                 document.getElementById('waitingPlayerPhone').textContent = maskPhoneNumber(GameState.currentPlayer.phone);
                 switchScreen('waiting');
+                updateWaitingScreen();
             }
         }
         console.log('🎮 Game initialized from Supabase');
@@ -2737,9 +2644,8 @@ document.getElementById('registrationForm').addEventListener('submit', async fun
         this.reset();
         document.getElementById('waitingPlayerName').textContent = `${firstName} ${lastName}`;
         document.getElementById('waitingPlayerPhone').textContent = maskPhoneNumber(phone);
-        updateWaitingScreen();
         switchScreen('waiting');
-        // بلافاصله watcher و Realtime را آماده کن تا شروع مسابقه بدون تأخیر دیده شود.
+        updateWaitingScreen();
         startPlayerStartWatcher();
         setSyncStatus('synced', '✓ ثبت شد و همگام شد');
     } catch (error) {
@@ -2753,16 +2659,21 @@ document.getElementById('registrationForm').addEventListener('submit', async fun
     }
 });
 
+// رندر صفحه انتظار فقط وقتی واقعاً دیده می‌شود (کاهش رندرهای بی‌مصرف)
 function updateWaitingScreen() {
+    if (GameState.currentScreen !== 'waiting') return;
+
     document.getElementById('totalPlayersCount').textContent = GameState.players.length;
     const playersListItems = document.getElementById('playersListItems');
-    playersListItems.innerHTML = '';
+    const fragment = document.createDocumentFragment();
     GameState.players.forEach(player => {
         const badge = document.createElement('span');
         badge.className = 'player-badge';
         badge.textContent = `${player.firstName} ${player.lastName}`;
-        playersListItems.appendChild(badge);
+        fragment.appendChild(badge);
     });
+    playersListItems.innerHTML = '';
+    playersListItems.appendChild(fragment);
 
     if (GameState.currentPlayer.id) {
         document.getElementById('waitingPlayerName').textContent = `${GameState.currentPlayer.firstName} ${GameState.currentPlayer.lastName}`;
@@ -2815,9 +2726,6 @@ document.getElementById('adminLoginForm')?.addEventListener('submit', async func
     } catch (error) {
         GameState.adminUser = null;
         GameState.isAdminMode = false;
-
-        // خطای واقعی را به کاربر نشان می‌دهیم تا مشخص شود مشکل از
-        // رمز عبور، تأیید ایمیل، نقش admin یا RLS/Database است.
         const message = error?.message || error?.error_description || 'خطای نامشخص';
         showError('adminLoginError', `❌ ${message}`);
         console.error('Admin auth error:', error);
@@ -2855,6 +2763,8 @@ function switchAdminTab(tabName) {
 }
 
 function updateAdminDashboard() {
+    if (!GameState.isAdminMode || GameState.currentScreen !== 'admin') return;
+
     document.getElementById('adminQuestionsCount').textContent = GameState.questions.length;
     document.getElementById('adminTotalPlayers').textContent = GameState.players.length;
     document.getElementById('adminActivePlayers').textContent = GameState.players.filter(p => p.status === 'playing').length;
@@ -2881,6 +2791,7 @@ function updateAdminDashboard() {
 
 // ==================== QUESTIONS ====================
 function updateQuestionsList() {
+    if (!GameState.isAdminMode) return;
     const container = document.getElementById('questionsList');
     if (!container) return;
     container.innerHTML = '';
@@ -2993,8 +2904,6 @@ document.getElementById('questionForm')?.addEventListener('submit', async functi
                 ? Math.max(...GameState.questions.map(q => q.questionOrder)) + 1
                 : 1;
 
-            // عمداً .select().single() حذف شده؛ اگر INSERT مجاز باشد ولی SELECT policy
-            // وجود نداشته باشد، قبلاً سؤال ذخیره می‌شد اما UI آن را خطا تلقی می‌کرد.
             await queryOrThrow(
                 supabaseClient
                     .from('questions')
@@ -3044,9 +2953,6 @@ async function deleteQuestion(index) {
         setSyncStatus('syncing', '⏳ در حال حذف سؤال...');
         await queryOrThrow(supabaseClient.from('questions').delete().eq('id', question.id).eq('game_id', GAME_ID), 'حذف سؤال');
         await loadQuestions();
-        // نکته: ترتیب نمایش بر مبنای question_order صعودی است؛ پس از حذف، فاصله‌ها
-        // در شماره‌گذاری به‌وجود می‌آید ولی ترتیب درست می‌ماند. حلقه‌ی به‌روزرسانی
-        // تک‌تک سؤالات (N درخواست پشت‌سرهم) حذف شد تا حذف سؤال فوری انجام شود.
         updateQuestionsList();
         updateAdminDashboard();
         setSyncStatus('synced', '✓ سؤال حذف شد');
@@ -3062,6 +2968,9 @@ function editQuestion(index) {
 
 // ==================== PLAYERS MANAGEMENT ====================
 function updatePlayersList(filterType = 'all') {
+    // جدول بازیکنان فقط در پنل مدیر وجود دارد؛ در صفحات بازیکن رندر نکن.
+    if (!GameState.isAdminMode || GameState.currentScreen !== 'admin') return;
+
     const tbody = document.getElementById('playersTableBody');
     if (!tbody) return;
     tbody.innerHTML = '';
@@ -3073,6 +2982,7 @@ function updatePlayersList(filterType = 'all') {
         tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; padding: 20px; color: var(--text-secondary);">🚫 بازیکنی یافت نشد</td></tr>`;
         return;
     }
+    const fragment = document.createDocumentFragment();
     filteredPlayers.forEach(player => {
         const row = document.createElement('tr');
         const statuses = {
@@ -3083,8 +2993,9 @@ function updatePlayersList(filterType = 'all') {
         };
         const [statusBadge, statusClass] = statuses[player.status] || [player.status, 'badge-primary'];
         row.innerHTML = `<td>${escapeHtml(player.firstName)}</td><td>${escapeHtml(player.lastName)}</td><td>${GameState.isAdminMode ? `<span style="font-family: 'Courier New', monospace;">${maskPhoneNumber(player.phone || '')}</span>` : '—'}</td><td><span class="badge ${statusClass}">${statusBadge}</span></td><td>${player.correctAnswers}</td>`;
-        tbody.appendChild(row);
+        fragment.appendChild(row);
     });
+    tbody.appendChild(fragment);
 }
 
 function switchPlayerView(filterType) {
@@ -3102,12 +3013,8 @@ async function adminStartGame() {
     try {
         setSyncStatus('syncing', '⏳ در حال شروع مسابقه...');
 
-        // یک timestamp واحد برای کل دور؛ همه بازیکنان برنامه زمانی یکسانی خواهند داشت.
         const roundStartIso = new Date().toISOString();
 
-        // مهم: ابتدا games را active می‌کنیم تا Realtime به همه کلاینت‌ها
-        // یک سیگنال شروع قطعی بدهد؛ سپس وضعیت بازیکنان را playing می‌کنیم.
-        // این ترتیب جلوی حالتی را می‌گیرد که event بازیکن قبل از event شروع بازی برسد.
         await queryOrThrow(
             supabaseClient
                 .from('games')
@@ -3137,7 +3044,6 @@ async function adminStartGame() {
             'فعال‌سازی بازیکنان'
         );
 
-        // game_state فقط برای هماهنگی پنل مدیریت نگه داشته می‌شود.
         await syncGameState('active', 0);
 
         GameState.gameStatus = 'active';
@@ -3149,7 +3055,6 @@ async function adminStartGame() {
             finished_at: null
         };
 
-        // بازیکنان را فقط یک بار بعد از شروع قطعی تازه می‌کنیم.
         await loadPlayers();
         updateAllViews();
         setSyncStatus('synced', '✓ مسابقه شروع شد؛ همه هم‌زمان وارد سؤال اول می‌شوند');
@@ -3204,7 +3109,6 @@ async function setGlobalQuestionIndex(index) {
 
         await syncGameState(GameState.gameStatus, index);
 
-        // وضعیت محلی را همان لحظه به‌روز می‌کنیم و منتظر refreshAllData نمی‌مانیم.
         if (GameState.game) GameState.game.current_question_index = index;
         if (GameState.gameState) GameState.gameState.current_question_index = index;
         updateAdminDashboard();
@@ -3224,12 +3128,14 @@ let activeQuestionLimitSeconds = 30;
 let activeQuestionAnswered = false;
 let activeQuestionResult = null;
 let activeQuestionTransitioned = false;
+let lastTimerRemaining = -1;
 
 function stopQuestionTimer() {
     if (questionTimerInterval) clearInterval(questionTimerInterval);
     questionTimerInterval = null;
     if (questionAdvanceTimeout) clearTimeout(questionAdvanceTimeout);
     questionAdvanceTimeout = null;
+    lastTimerRemaining = -1;
 }
 
 function getScheduledQuestionStartMs(questionIndex) {
@@ -3259,12 +3165,6 @@ function setAnswerFeedback(message, type = '') {
     el.textContent = message;
 }
 
-function disableQuestionOptions() {
-    document.querySelectorAll('.option-btn').forEach(btn => {
-        btn.disabled = true;
-    });
-}
-
 function enableQuestionOptions() {
     document.querySelectorAll('.option-btn').forEach(btn => {
         btn.disabled = false;
@@ -3285,11 +3185,13 @@ function startQuestionTimer(question, questionIndex) {
     const timerEl = document.getElementById('questionTimer');
     const endMs = getScheduledQuestionStartMs(questionIndex) + activeQuestionLimitSeconds * 1000;
 
+    // tick هر ۲۵۰ میلی‌ثانیه؛ DOM فقط وقتی عدد تغییر کند آپدیت می‌شود (رندر حداقلی)
     const tick = () => {
         const remainingMs = Math.max(0, endMs - nowMs());
         const remaining = Math.ceil(remainingMs / 1000);
 
-        if (timerEl) {
+        if (timerEl && remaining !== lastTimerRemaining) {
+            lastTimerRemaining = remaining;
             timerEl.textContent = `${remaining} ثانیه`;
             timerEl.classList.toggle(
                 'warning',
@@ -3305,20 +3207,16 @@ function startQuestionTimer(question, questionIndex) {
     };
 
     tick();
-    questionTimerInterval = setInterval(tick, 200);
+    questionTimerInterval = setInterval(tick, 250);
 }
 
 async function finishQuestionWindow(question, questionIndex) {
     if (activeQuestionTransitioned || activeQuestionIndex !== questionIndex) return;
 
-    // اگر بازیکن تا پایان زمان جواب نداده، timeout را ثبت کن.
-    // activeQuestionTransitioned را قبل از selectAnswer نمی‌گذاریم تا selectAnswer
-    // نتواند انتقال به سؤال بعدی را به‌دلیل همین قفل متوقف کند.
     if (!activeQuestionAnswered) {
         try {
             await selectAnswer(-1, question.id, questionIndex, true);
         } catch (_) {}
-        // selectAnswer بعد از ثبت timeout نتیجه را در activeQuestionResult می‌گذارد.
     }
 
     if (activeQuestionTransitioned || activeQuestionIndex !== questionIndex) return;
@@ -3326,7 +3224,6 @@ async function finishQuestionWindow(question, questionIndex) {
 
     const result = activeQuestionResult;
 
-    // همه بازیکنان بر اساس زمان شروع رسمی سؤال حرکت می‌کنند، نه زمان پاسخ خودشان.
     if (result?.status === 'eliminated') {
         document.getElementById('eliminatedCorrectCount').textContent =
             GameState.currentPlayer.correctAnswers;
@@ -3351,7 +3248,6 @@ async function finishQuestionWindow(question, questionIndex) {
         return;
     }
 
-    // یک انتقال نرم و مشترک: پاسخ ۲ ثانیه دیده شده، سپس تا پایان پنجره سؤال صبر می‌کنیم.
     setAnswerFeedback('✓ زمان این سؤال تمام شد؛ سؤال بعدی هم‌زمان برای همه باز می‌شود.', 'waiting');
     questionAdvanceTimeout = setTimeout(() => {
         if (GameState.currentPlayer.status === 'playing') {
@@ -3367,14 +3263,11 @@ function startGameForPlayer() {
     const index = Number(GameState.currentPlayer.currentQuestionIndex || 0);
     if (index >= GameState.questions.length) return;
 
-    // Watcher را متوقف نمی‌کنیم؛ در صورت قطع/تاخیر Realtime، صفحه خودش
-    // وضعیت بازی را دوباره چک می‌کند و نیاز به Refresh دستی ندارد.
     switchScreen('game');
     loadQuestion(index);
 }
 
 function loadQuestion(questionIndex, force = false) {
-    // بازیکن حذف‌شده/برنده هرگز نباید سؤال بعدی را ببیند.
     if (GameState.currentPlayer.status !== 'playing') return;
 
     if (questionIndex >= GameState.questions.length) {
@@ -3385,15 +3278,10 @@ function loadQuestion(questionIndex, force = false) {
     const question = GameState.questions[questionIndex];
     if (!question) return;
 
-    // Realtime ممکن است یک تغییر تکراری برای همان سؤال بفرستد.
-    // در این حالت DOM و تایمر را دوباره از صفر نمی‌سازیم.
     if (!force && activeQuestionIndex === questionIndex &&
         activeQuestionId === question.id &&
         GameState.currentScreen === 'game') {
-        document.getElementById('correctAnswersCount').textContent =
-            GameState.currentPlayer.correctAnswers;
-        document.getElementById('remainingPlayersCount').textContent =
-            GameState.players.filter(p => p.status === 'playing').length;
+        updateGameStatsOnly();
         return;
     }
 
@@ -3430,7 +3318,6 @@ function loadQuestion(questionIndex, force = false) {
 async function selectAnswer(selectedIndex, questionId, questionIndex, timedOut = false) {
     if (!GameState.currentPlayer.id || GameState.currentPlayer.status !== 'playing') return;
 
-    // جلوگیری از دوبار کلیک یا timeout هم‌زمان با پاسخ کاربر.
     if (activeQuestionIndex === questionIndex && activeQuestionAnswered) return;
 
     activeQuestionAnswered = true;
@@ -3489,14 +3376,11 @@ async function selectAnswer(selectedIndex, questionId, questionIndex, timedOut =
             status: result.status,
             currentQuestionIndex: Number(result.current_question_index ?? questionIndex),
             correctAnswers: Number(result.correct_answers || 0),
-            // این فیلد دیگر مبنای زمان‌بندی UI نیست؛ زمان‌بندی رسمی از games.started_at محاسبه می‌شود.
             currentQuestionStartedAt: result.current_question_started_at || null
         };
 
         activeQuestionResult = result;
 
-        // نتیجه بلافاصله نمایش داده می‌شود، اما سؤال بعدی هرگز بلافاصله باز نمی‌شود.
-        // transition فقط در پایان پنجره زمانی سؤال انجام می‌شود.
         const remainingMs = getQuestionRemainingMs(questionIndex, GameState.questions[questionIndex]);
         const feedbackHoldMs = Math.min(2000, Math.max(0, remainingMs));
 
@@ -3515,25 +3399,14 @@ async function selectAnswer(selectedIndex, questionId, questionIndex, timedOut =
             }, Math.min(2000, feedbackHoldMs));
         }
 
-        // اگر تایمر به‌خاطر درخواست شبکه کمی دیر اجرا شد، زمان باقی‌مانده را مستقل محاسبه می‌کنیم.
         if (remainingMs <= 0) {
             await finishQuestionWindow(GameState.questions[questionIndex], questionIndex);
         }
     } catch (error) {
-        // فقط در خطای واقعی شبکه/DB امکان تلاش مجدد داده می‌شود.
         activeQuestionAnswered = false;
         activeQuestionResult = null;
         enableQuestionOptions();
         reportSupabaseError('ثبت پاسخ', error);
-    }
-}
-
-async function eliminatePlayer(questionIndex) {
-    // Status changes are performed atomically by submit_answer_secure().
-    if (GameState.currentPlayer?.status === 'eliminated') {
-        document.getElementById('eliminatedCorrectCount').textContent = GameState.currentPlayer.correctAnswers;
-        document.getElementById('eliminatedLastQuestion').textContent = questionIndex + 1;
-        forceEliminatedView();
     }
 }
 
@@ -3542,12 +3415,6 @@ function showEliminatedScreenFromState() {
     document.getElementById('eliminatedCorrectCount').textContent = GameState.currentPlayer.correctAnswers;
     document.getElementById('eliminatedLastQuestion').textContent = Math.max(1, idx + 1);
     switchScreen('eliminated');
-}
-
-async function winGame() {
-    // Winner creation is performed atomically by submit_answer_secure().
-    await loadWinners();
-    watchResults();
 }
 
 function watchResults() {
@@ -3570,13 +3437,15 @@ function displayWinners() {
         winnersList.innerHTML = `<div style="text-align: center; padding: 40px; background: var(--light); border-radius: 12px;"><p style="color: var(--text-secondary);">🚫 هنوز برنده‌ای مشخص نشده است</p></div>`;
         return;
     }
+    const fragment = document.createDocumentFragment();
     GameState.winners.forEach((winner, index) => {
         const winnerElement = document.createElement('div');
         winnerElement.className = 'winner-item';
         const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
         winnerElement.innerHTML = `<div class="winner-rank">${medal}</div><div class="winner-info"><div class="winner-name">${escapeHtml(winner.firstName)} ${escapeHtml(winner.lastName)}</div><div class="winner-phone">${maskPhoneNumber(winner.phone)}</div></div>`;
-        winnersList.appendChild(winnerElement);
+        fragment.appendChild(winnerElement);
     });
+    winnersList.appendChild(fragment);
 }
 
 // ==================== DEMO / RESET ====================
@@ -3621,9 +3490,6 @@ async function resetForNewRound() {
     try {
         setSyncStatus('syncing', '⏳ در حال پاک کردن بازیکنان و نتایج...');
 
-        // این عملیات قبلاً به RPC «reset_game_for_new_round» وابسته بود.
-        // حالا پس از ورود مدیر، عملیات مستقیماً روی جداول انجام می‌شود.
-        // ترتیب حذف برای رعایت وابستگی‌های Foreign Key مهم است.
         await queryOrThrow(
             supabaseClient.from('answers').delete().eq('game_id', GAME_ID),
             'حذف پاسخ‌های دور قبلی'
@@ -3677,25 +3543,6 @@ async function resetForNewRound() {
     }
 }
 
-async function clearAllData() {
-    stopQuestionTimer();
-    if (!confirm('⚠️ آیا مطمئن هستید؟ تمام بازیکنان، پاسخ‌ها، برندگان و سؤالات این مسابقه حذف خواهند شد!')) return;
-    try {
-        setSyncStatus('syncing', '⏳ در حال پاک کردن داده‌ها...');
-        await queryOrThrow(supabaseClient.from('answers').delete().eq('game_id', GAME_ID), 'حذف پاسخ‌ها');
-        await queryOrThrow(supabaseClient.from('winners').delete().eq('game_id', GAME_ID), 'حذف برندگان');
-        await queryOrThrow(supabaseClient.from('players').delete().eq('game_id', GAME_ID), 'حذف بازیکنان');
-        await queryOrThrow(supabaseClient.from('questions').delete().eq('game_id', GAME_ID), 'حذف سؤالات');
-        await queryOrThrow(supabaseClient.from('games').update({ status: 'setup', current_question_index: 0, started_at: null, finished_at: null }).eq('id', GAME_ID), 'ریست مسابقه');
-        await syncGameState('setup', 0);
-        rememberCurrentPlayer(null, null);
-        alert('✓ تمام داده‌های مسابقه پاک شدند');
-        location.reload();
-    } catch (error) {
-        reportSupabaseError('پاک کردن داده‌ها', error);
-    }
-}
-
 // ==================== EVENTS ====================
 document.getElementById('currentQuestionSlider')?.addEventListener('input', function(e) {
     document.getElementById('sliderValue').textContent = e.target.value;
@@ -3712,8 +3559,6 @@ window.addEventListener('load', async function() {
 
 document.addEventListener('visibilitychange', function() {
     if (!document.hidden) {
-        // Android ممکن است interval/Realtime را در پس‌زمینه متوقف کند؛ به محض برگشت
-        // صفحه، وضعیت واقعی بازی را بدون نیاز به Refresh دوباره می‌خوانیم.
         if (GameState.currentPlayer.id) checkPlayerStartState(true);
 
         if (GameState.currentScreen === 'game' && activeQuestionIndex !== null) {
@@ -3736,13 +3581,11 @@ window.addEventListener('pageshow', function() {
 
 window.addEventListener('online', function() {
     if (GameState.currentPlayer.id) checkPlayerStartState(true);
-    // اتصال دوباره ممکن است به معنی مکث طولانی بوده باشد؛ ساعت را دوباره سنکرون کن.
     syncServerClock();
 });
 
-window.addEventListener('beforeunload', function(e) {
+window.addEventListener('beforeunload', function() {
     stopQuestionTimer();
-    // Do not block refresh/navigation: state is persisted in Supabase.
 });
 </script>
 
