@@ -12,7 +12,6 @@
         * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         input, textarea, select { -webkit-user-select: text; user-select: text; }
         
-        /* متغیرهای حالت شب (پیش‌فرض) */
         [data-theme="dark"] {
             --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #311042 100%);
             --card-bg: rgba(255, 255, 255, 0.07);
@@ -25,7 +24,6 @@
             --opt-bg: rgba(255, 255, 255, 0.05);
         }
 
-        /* متغیرهای حالت روز */
         [data-theme="light"] {
             --bg-gradient: linear-gradient(135deg, #e0e7ff 0%, #f3e8ff 50%, #fce7f3 100%);
             --card-bg: rgba(255, 255, 255, 0.85);
@@ -84,6 +82,7 @@
             background: var(--card-bg); backdrop-filter: blur(16px);
             border: 1px solid var(--card-border); border-radius: var(--r-lg);
             padding: 24px 18px; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15); text-align: center;
+            max-height: 90vh; overflow-y: auto;
         }
 
         .input-group { margin-bottom: 14px; text-align: right; }
@@ -98,6 +97,7 @@
             width: 100%; padding: 14px; border: none; border-radius: var(--r-md);
             font-size: 15px; font-weight: 800; cursor: pointer; transition: all 0.2s; font-family: inherit; margin-top: 8px;
         }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
         .btn-primary { background: linear-gradient(135deg, #4f46e5, #7c3aed); color: white; box-shadow: 0 4px 15px var(--primary-glow); }
         .btn-secondary { background: rgba(0, 0, 0, 0.05); color: var(--text-main); border: 1px solid var(--card-border); }
         .btn-danger { background: var(--danger); color: white; }
@@ -112,7 +112,7 @@
         .options-grid { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
         .opt-btn {
             padding: 14px; border-radius: var(--r-md); background: var(--opt-bg);
-            border: 1px solid var(--card-border); color: var(--text-main); font-size: 14px; font-weight: 700; text-align: right; cursor: pointer;
+            border: 1px solid var(--card-border); color: var(--text-main); font-size: 14px; font-weight: 700; text-align: right; cursor: pointer; transition: all 0.2s;
         }
         .opt-btn.selected { border-color: var(--primary); background: rgba(99, 102, 241, 0.2); }
         .opt-btn.correct { background: var(--success) !important; color: white !important; }
@@ -165,7 +165,7 @@
                     <div class="input-group"><label>نام خانوادگی</label><input type="text" id="pLastName" required placeholder="مثال: محمدی"></div>
                     <div class="input-group"><label>شماره همراه</label><input type="tel" id="pPhone" required pattern="09[0-9]{9}" placeholder="09123456789"></div>
                     <div id="regError" class="error-msg hidden"></div>
-                    <button type="submit" class="btn btn-primary">ثبت‌نام و ورود</button>
+                    <button type="submit" id="regSubmitBtn" class="btn btn-primary">ثبت‌نام و ورود</button>
                 </form>
                 <button class="btn btn-secondary" onclick="openAboutUs()">ℹ️ درباره ما و سازنده</button>
                 <button class="btn btn-secondary" onclick="switchScreen('adminLogin')">ورود به پنل مدیریت</button>
@@ -249,7 +249,7 @@
                     <div class="input-group"><label>ایمیل مدیر</label><input type="email" id="admEmail" required></div>
                     <div class="input-group"><label>رمز عبور</label><input type="password" id="admPass" required></div>
                     <div id="admError" class="error-msg hidden"></div>
-                    <button type="submit" class="btn btn-primary">ورود</button>
+                    <button type="submit" id="admSubmitBtn" class="btn btn-primary">ورود</button>
                 </form>
                 <button class="btn btn-secondary" onclick="switchScreen('login')">بازگشت</button>
             </div>
@@ -259,10 +259,10 @@
         <section id="adminScreen" class="screen">
             <div class="glass-card">
                 <nav class="admin-tabs">
-                    <button class="tab-btn active" onclick="switchAdminTab('players')">👥 بازیکن‌ها</button>
-                    <button class="tab-btn" onclick="switchAdminTab('questions')">❓ سوال‌ها</button>
-                    <button class="tab-btn" onclick="switchAdminTab('aboutEdit')">✏️ ویرایش درباره ما</button>
-                    <button class="tab-btn" onclick="switchAdminTab('reset')">🔄 ریست مسابقه</button>
+                    <button class="tab-btn active" onclick="switchAdminTab(event, 'players')">👥 بازیکن‌ها</button>
+                    <button class="tab-btn" onclick="switchAdminTab(event, 'questions')">❓ سوال‌ها</button>
+                    <button class="tab-btn" onclick="switchAdminTab(event, 'aboutEdit')">✏️ ویرایش درباره ما</button>
+                    <button class="tab-btn" onclick="switchAdminTab(event, 'reset')">🔄 ریست مسابقه</button>
                     <button class="tab-btn" onclick="exitAdmin()" style="color: var(--danger);">🚪 خروج</button>
                 </nav>
 
@@ -323,7 +323,7 @@
                         <div class="input-group"><label>ایمیل پشتیبانی</label><input type="email" id="editDevEmail" required></div>
                         <div class="input-group"><label>شناسه روبیکا</label><input type="text" id="editDevRubika" required></div>
                         <div class="input-group"><label>شناسه تلگرام</label><input type="text" id="editDevTelegram" required></div>
-                        <button type="submit" class="btn btn-primary">ذخیره تغییرات درباره ما</button>
+                        <button type="submit" id="btnSaveAbout" class="btn btn-primary">ذخیره تغییرات درباره ما</button>
                     </form>
                 </div>
 
@@ -361,7 +361,8 @@
             selectedOption: null,
             broadcastChannel: null,
             isAdmin: false,
-            aboutUsData: null
+            aboutUsData: null,
+            isEvaluating: false
         };
 
         /* تغییر حالت روز و شب */
@@ -382,6 +383,7 @@
         }
 
         function switchScreen(id) {
+            clearInterval(State.timerInterval);
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
             const target = document.getElementById(id + 'Screen');
             if (target) target.classList.add('active');
@@ -389,21 +391,25 @@
 
         /* بخش درباره ما */
         async function fetchAboutUs() {
-            const { data } = await supabaseClient.from('settings').select('value').eq('key', 'about_us').single();
-            if (data && data.value) {
-                State.aboutUsData = data.value;
-                document.getElementById('dispDevName').textContent = data.value.developer_name;
-                document.getElementById('dispDevDesc').textContent = data.value.description;
-                document.getElementById('dispDevEmail').textContent = data.value.email;
-                document.getElementById('dispDevRubika').textContent = data.value.rubika;
-                document.getElementById('dispDevTelegram').textContent = data.value.telegram;
+            try {
+                const { data, error } = await supabaseClient.from('settings').select('value').eq('key', 'about_us').single();
+                if (error) throw error;
+                if (data && data.value) {
+                    State.aboutUsData = data.value;
+                    document.getElementById('dispDevName').textContent = data.value.developer_name || '-';
+                    document.getElementById('dispDevDesc').textContent = data.value.description || '-';
+                    document.getElementById('dispDevEmail').textContent = data.value.email || '-';
+                    document.getElementById('dispDevRubika').textContent = data.value.rubika || '-';
+                    document.getElementById('dispDevTelegram').textContent = data.value.telegram || '-';
 
-                // پر کردن فرم ویرایش مدیر
-                document.getElementById('editDevName').value = data.value.developer_name;
-                document.getElementById('editDevDesc').value = data.value.description;
-                document.getElementById('editDevEmail').value = data.value.email;
-                document.getElementById('editDevRubika').value = data.value.rubika;
-                document.getElementById('editDevTelegram').value = data.value.telegram;
+                    document.getElementById('editDevName').value = data.value.developer_name || '';
+                    document.getElementById('editDevDesc').value = data.value.description || '';
+                    document.getElementById('editDevEmail').value = data.value.email || '';
+                    document.getElementById('editDevRubika').value = data.value.rubika || '';
+                    document.getElementById('editDevTelegram').value = data.value.telegram || '';
+                }
+            } catch (err) {
+                console.error("خطا در بارگیری درباره ما:", err);
             }
         }
 
@@ -414,6 +420,10 @@
 
         document.getElementById('editAboutForm').onsubmit = async (e) => {
             e.preventDefault();
+            const btn = document.getElementById('btnSaveAbout');
+            btn.disabled = true;
+            btn.textContent = "در حال ذخیره...";
+
             const updated = {
                 developer_name: document.getElementById('editDevName').value.trim(),
                 description: document.getElementById('editDevDesc').value.trim(),
@@ -423,11 +433,14 @@
             };
 
             const { error } = await supabaseClient.from('settings').upsert({ key: 'about_us', value: updated });
+            btn.disabled = false;
+            btn.textContent = "ذخیره تغییرات درباره ما";
+
             if (!error) {
                 alert("اطلاعات درباره ما با موفقیت به روز شد.");
                 fetchAboutUs();
             } else {
-                alert("خطا در ذخیره‌سازی.");
+                alert("خطا در ذخیره‌سازی: " + error.message);
             }
         };
 
@@ -455,7 +468,9 @@
         }
 
         async function evaluateAnswerAndNext() {
-            if (State.isAdmin) return;
+            if (State.isAdmin || State.isEvaluating) return;
+            State.isEvaluating = true;
+            clearInterval(State.timerInterval);
 
             const q = State.questions[State.currentQIndex];
             const btns = document.querySelectorAll('.opt-btn');
@@ -467,20 +482,26 @@
             if (isCorrect) {
                 State.score += 10;
                 document.getElementById('scoreText').textContent = `امتیاز: ${State.score}`;
-                supabaseClient.from('players').update({ score: State.score }).eq('id', State.player.id);
+                await supabaseClient.from('players').update({ score: State.score }).eq('id', State.player.id);
 
-                setTimeout(() => { renderQuestion(State.currentQIndex + 1); }, 1200);
+                setTimeout(() => { 
+                    State.isEvaluating = false;
+                    renderQuestion(State.currentQIndex + 1); 
+                }, 1200);
             } else {
                 if (State.selectedOption !== null && btns[State.selectedOption]) {
                     btns[State.selectedOption].classList.add('wrong');
                 }
                 await supabaseClient.from('players').update({ status: 'eliminated' }).eq('id', State.player.id);
-                setTimeout(() => { switchScreen('eliminated'); }, 1500);
+                setTimeout(() => { 
+                    State.isEvaluating = false;
+                    switchScreen('eliminated'); 
+                }, 1500);
             }
         }
 
         function selectOption(index) {
-            if (State.selectedOption !== null) return;
+            if (State.selectedOption !== null || State.isEvaluating) return;
             State.selectedOption = index;
 
             const btns = document.querySelectorAll('.opt-btn');
@@ -525,38 +546,57 @@
         }
 
         async function fetchQuestions() {
-            const { data } = await supabaseClient.from('questions').select('*').eq('game_id', GAME_ID).order('created_at', { ascending: true });
-            State.questions = data || [];
-            if (State.isAdmin) renderAdminQuestionsList();
+            try {
+                const { data, error } = await supabaseClient.from('questions').select('*').eq('game_id', GAME_ID).order('created_at', { ascending: true });
+                if (error) throw error;
+                State.questions = data || [];
+                if (State.isAdmin) renderAdminQuestionsList();
+            } catch (err) {
+                console.error("خطا در دریافت سوالات:", err);
+            }
         }
 
         document.getElementById('regForm').onsubmit = async (e) => {
             e.preventDefault();
+            const submitBtn = document.getElementById('regSubmitBtn');
             const fName = document.getElementById('pFirstName').value.trim();
             const lName = document.getElementById('pLastName').value.trim();
             const phone = document.getElementById('pPhone').value.trim();
             const err = document.getElementById('regError');
+            
             err.classList.add('hidden');
+            submitBtn.disabled = true;
+            submitBtn.textContent = "در حال ارسال...";
 
-            const { data: existing } = await supabaseClient.from('players').select('id').eq('game_id', GAME_ID).eq('phone', phone).maybeSingle();
+            try {
+                const { data: existing } = await supabaseClient.from('players').select('id').eq('game_id', GAME_ID).eq('phone', phone).maybeSingle();
 
-            if (existing) {
-                err.textContent = "این شماره قبلاً در مسابقه ثبت شده است.";
+                if (existing) {
+                    err.textContent = "این شماره قبلاً در مسابقه ثبت شده است.";
+                    err.classList.remove('hidden');
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = "ثبت‌نام و ورود";
+                    return;
+                }
+
+                const { data, error } = await supabaseClient.from('players').insert([{
+                    game_id: GAME_ID, first_name: fName, last_name: lName, phone: phone, score: 0, status: 'waiting'
+                }]).select().single();
+
+                if (error) {
+                    err.textContent = "خطا در ورود: " + error.message;
+                    err.classList.remove('hidden');
+                } else {
+                    State.player = data;
+                    document.getElementById('pWaitName').textContent = `${fName} ${lName}`;
+                    switchScreen('waiting');
+                }
+            } catch (ex) {
+                err.textContent = "خطای غیرمنتظره ارتباط با سرور.";
                 err.classList.remove('hidden');
-                return;
-            }
-
-            const { data, error } = await supabaseClient.from('players').insert([{
-                game_id: GAME_ID, first_name: fName, last_name: lName, phone: phone, score: 0, status: 'waiting'
-            }]).select().single();
-
-            if (error) {
-                err.textContent = "خطا در ورود: " + error.message;
-                err.classList.remove('hidden');
-            } else {
-                State.player = data;
-                document.getElementById('pWaitName').textContent = `${fName} ${lName}`;
-                switchScreen('waiting');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = "ثبت‌نام و ورود";
             }
         };
 
@@ -579,11 +619,11 @@
             .subscribe();
         }
 
-        function switchAdminTab(tab) {
+        function switchAdminTab(evt, tab) {
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
 
-            event.target.classList.add('active');
+            if (evt && evt.target) evt.target.classList.add('active');
             if (tab === 'players') { document.getElementById('tabPlayers').classList.add('active'); fetchPlayersList(); }
             if (tab === 'questions') { document.getElementById('tabQuestions').classList.add('active'); fetchQuestions(); }
             if (tab === 'aboutEdit') { document.getElementById('tabAboutEdit').classList.add('active'); fetchAboutUs(); }
@@ -592,10 +632,17 @@
 
         document.getElementById('adminForm').onsubmit = async (e) => {
             e.preventDefault();
+            const submitBtn = document.getElementById('admSubmitBtn');
             const email = document.getElementById('admEmail').value;
             const pass = document.getElementById('admPass').value;
 
+            submitBtn.disabled = true;
+            submitBtn.textContent = "در حال بررسی...";
+
             const { error } = await supabaseClient.auth.signInWithPassword({ email, password: pass });
+            submitBtn.disabled = false;
+            submitBtn.textContent = "ورود";
+
             if (error) {
                 document.getElementById('admError').textContent = "ایمیل یا رمز عبور اشتباه است.";
                 document.getElementById('admError').classList.remove('hidden');
@@ -622,6 +669,7 @@
         }
 
         async function adminResetGame() {
+            if (!confirm("آیا مطمئن هستید؟ تمام اطلاعات مسابقه پاک می‌شوند.")) return;
             await supabaseClient.rpc('reset_quiz_game', { p_game_id: GAME_ID });
             await State.broadcastChannel.send({ type: 'broadcast', event: 'RESET_GAME' });
             alert("مسابقه ریست شد و کلیه شرکت‌کنندگان پاک شدند.");
@@ -629,26 +677,34 @@
         }
 
         async function fetchPlayersList() {
-            const { data } = await supabaseClient.from('players').select('*').eq('game_id', GAME_ID).order('score', { ascending: false });
-            const tbody = document.getElementById('playersTbody');
-            tbody.innerHTML = '';
-            if (!data || data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">هیچ بازیکنی ثبت نشده است.</td></tr>';
-                return;
+            try {
+                const { data, error } = await supabaseClient.from('players').select('*').eq('game_id', GAME_ID).order('score', { ascending: false });
+                const tbody = document.getElementById('playersTbody');
+                tbody.innerHTML = '';
+                if (error || !data || data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">هیچ بازیکنی ثبت نشده است.</td></tr>';
+                    return;
+                }
+
+                data.forEach(p => {
+                    let statusBadge = '<span class="status-pill status-waiting">در حال انتظار</span>';
+                    if (p.status === 'playing') statusBadge = '<span class="status-pill status-playing">در حال بازی</span>';
+                    if (p.status === 'eliminated') statusBadge = '<span class="status-pill status-eliminated">سوخته ❌</span>';
+                    if (p.status === 'winner') statusBadge = '<span class="status-pill status-winner">برنده 🏆</span>';
+
+                    tbody.innerHTML += `<tr><td>${p.first_name || ''} ${p.last_name || ''}</td><td>${p.phone || ''}</td><td>${p.score || 0}</td><td>${statusBadge}</td></tr>`;
+                });
+            } catch (err) {
+                console.error("خطا در بارگیری بازیکنان:", err);
             }
-
-            data.forEach(p => {
-                let statusBadge = '<span class="status-pill status-waiting">در حال انتظار</span>';
-                if (p.status === 'playing') statusBadge = '<span class="status-pill status-playing">در حال بازی</span>';
-                if (p.status === 'eliminated') statusBadge = '<span class="status-pill status-eliminated">سوخته ❌</span>';
-                if (p.status === 'winner') statusBadge = '<span class="status-pill status-winner">برنده 🏆</span>';
-
-                tbody.innerHTML += `<tr><td>${p.first_name} ${p.last_name}</td><td>${p.phone}</td><td>${p.score || 0}</td><td>${statusBadge}</td></tr>`;
-            });
         }
 
         document.getElementById('addQForm').onsubmit = async (e) => {
             e.preventDefault();
+            const btn = document.getElementById('btnSaveQ');
+            btn.disabled = true;
+            btn.textContent = "در حال ثبت...";
+
             const editId = document.getElementById('editingQId').value;
             const qData = {
                 game_id: GAME_ID,
@@ -669,6 +725,7 @@
                 alert("سوال جدید اضافه شد.");
             }
 
+            btn.disabled = false;
             cancelQEdit();
             fetchQuestions();
         };
