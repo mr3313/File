@@ -2487,7 +2487,7 @@ document.getElementById('registrationForm').addEventListener('submit', async fun
 
     setSyncStatus('syncing', '⏳ در حال ثبت‌نام...');
     try {
-        const player = await queryOrThrow(
+        const rpcResult = await queryOrThrow(
             supabaseClient.rpc('register_player', {
                 p_game_id: GAME_ID,
                 p_first_name: firstName,
@@ -2497,8 +2497,28 @@ document.getElementById('registrationForm').addEventListener('submit', async fun
             'ثبت بازیکن'
         );
 
-        if (!player?.id || !player?.player_token) {
-            throw new Error('ثبت‌نام انجام شد اما شناسه امن بازیکن دریافت نشد');
+        const player = Array.isArray(rpcResult)
+            ? rpcResult[0]
+            : (rpcResult?.player || rpcResult?.data || rpcResult);
+
+        const tokenInfo = {
+            exists: !!player && Object.prototype.hasOwnProperty.call(player, 'player_token'),
+            type: typeof player?.player_token,
+            isNull: player?.player_token === null,
+            isUndefined: typeof player?.player_token === 'undefined',
+            isEmpty: player?.player_token === '',
+            length: typeof player?.player_token === 'string' ? player.player_token.length : null
+        };
+        console.log('🔐 player_token check:', tokenInfo);
+        console.log('📦 register_player raw result:', rpcResult);
+
+        if (!player?.id) {
+            throw new Error('ثبت‌نام انجام شد، اما شناسه بازیکن از سرور دریافت نشد');
+        }
+        if (typeof player.player_token !== 'string' || player.player_token.trim().length < 16) {
+            throw new Error(
+                `ثبت‌نام انجام شد، اما توکن امن معتبر از سرور دریافت نشد. نوع=${tokenInfo.type}, null=${tokenInfo.isNull}, خالی=${tokenInfo.isEmpty}, طول=${tokenInfo.length ?? '-'} `
+            );
         }
 
         GameState.currentPlayer = mapPlayer(player);
