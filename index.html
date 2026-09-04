@@ -2209,8 +2209,16 @@ function startRealtime() {
         })
         .subscribe(status => {
             console.log('📡 Supabase Realtime:', status);
-            if (status === 'SUBSCRIBED') setSyncStatus('synced', '✓ همگام‌سازی زنده فعال است');
-            if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') setSyncStatus('error', '⚠️ اتصال زنده قطع شد');
+            if (status === 'SUBSCRIBED') {
+                setSyncStatus('synced', '✓ همگام‌سازی زنده فعال است');
+                if (GameState.currentPlayer.id) checkPlayerStartState(true);
+            }
+            if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+                setSyncStatus('error', '⚠️ اتصال زنده قطع شد؛ همگام‌سازی خودکار فعال است');
+                // Realtime فقط یک مسیر کمکی است؛ مسیر polling بدون آن هم کار می‌کند.
+                startPlayerStartWatcher();
+                checkPlayerStartState(true);
+            }
         });
 
     GameState.realtimeChannels.push(channel);
@@ -2287,27 +2295,39 @@ async function handleGameStatusChange() {
 // به ریست دستی یا رفرش صفحه نداشته باشد.
 let playerStartWatcher = null;
 let playerStartCheckInFlight = false;
+let playerStartLastCheckAt = 0;
 
-async function checkPlayerStartState() {
-    if (playerStartCheckInFlight || !GameState.currentPlayer.id) return;
+async function checkPlayerStartState(force = false) {
+    if (!GameState.currentPlayer.id) return;
     if (GameState.currentPlayer.status === 'winner' || GameState.currentPlayer.status === 'eliminated') return;
+    if (playerStartCheckInFlight) return;
 
+    // جلوگیری از درخواست‌های هم‌زمان؛ force فقط برای focus/pageshow/online و Realtime است.
+    const now = Date.now();
+    if (!force && now - playerStartLastCheckAt < 200) return;
+    playerStartLastCheckAt = now;
     playerStartCheckInFlight = true;
+
     try {
-        // این بررسی عمداً مستقل از Realtime است. اگر event شروع مسابقه گم شود،
-        // گوشی حداکثر در چند صد میلی‌ثانیه وضعیت واقعی Supabase را می‌گیرد.
+        // این مسیر کاملاً مستقل از Realtime است. حتی اگر هیچ eventای دریافت نشود،
+        // وضعیت واقعی بازی از خود Supabase خوانده می‌شود.
         const game = await loadGame();
         if (!game) return;
         GameState.gameStatus = game.status || 'setup';
 
+        if (GameState.gameStatus === 'finished') {
+            await finishGame();
+            return;
+        }
         if (GameState.gameStatus !== 'active') return;
 
+        // games.active شدن سیگنال اصلی است. سپس وضعیت امن خود بازیکن را می‌خوانیم؛
+        // بنابراین گم شدن event جدول players مانع شروع نمی‌شود.
         const player = await loadCurrentPlayer();
         if (!player) return;
         GameState.currentPlayer = player;
 
         if (player.status === 'playing') {
-            // اگر مسابقه فعال شده ولی Realtime به هر دلیل نرسیده، همین‌جا وارد بازی شو.
             if (GameState.currentScreen !== 'game' || activeQuestionIndex === null) {
                 startGameForPlayer();
             }
@@ -2324,23 +2344,23 @@ async function checkPlayerStartState() {
 function startPlayerStartWatcher() {
     if (playerStartWatcher || !GameState.currentPlayer.id) return;
 
-    // یک بررسی فوری؛ منتظر اولین interval نمی‌مانیم.
-    checkPlayerStartState();
+    // فوراً بررسی کن؛ برای شروع مسابقه به Realtime وابسته نباش.
+    checkPlayerStartState(true);
 
-    // این polling فقط برای مرحله شروع/انتظار است. بعد از ورود بازیکن به بازی
-    // نیز ادامه دارد تا اگر وضعیت بازیکن با Realtime نرسید، UI قفل نشود.
+    // Polling مداوم در صفحه انتظار: اگر Realtime یک event را از دست بدهد،
+    // حداکثر چند صد میلی‌ثانیه بعد از active شدن games بازیکن وارد می‌شود.
     playerStartWatcher = setInterval(() => {
         if (!GameState.currentPlayer.id || GameState.gameStatus === 'finished') return;
 
-        // فقط وقتی واقعاً داخل سؤال فعال هستیم، بررسی شروع را سبک‌تر می‌کنیم.
-        // اگر بازیکن waiting باشد ولی game active شده باشد، حتماً باید ادامه دهیم.
+        // در صفحه سؤال فعال، polling سنگین لازم نیست؛ اما با کوچک‌ترین برگشت به انتظار
+        // یا از دست رفتن state، دوباره وضعیت واقعی Supabase بررسی می‌شود.
         if (GameState.currentScreen === 'game' &&
             GameState.gameStatus === 'active' &&
             GameState.currentPlayer.status === 'playing' &&
             activeQuestionIndex !== null) return;
 
-        checkPlayerStartState();
-    }, 500);
+        checkPlayerStartState(false);
+    }, 1000);
 }
 
 function stopPlayerStartWatcher() {
@@ -3060,19 +3080,21 @@ function startQuestionTimer(question, questionIndex) {
 
 async function finishQuestionWindow(question, questionIndex) {
     if (activeQuestionTransitioned || activeQuestionIndex !== questionIndex) return;
-    activeQuestionTransitioned = true;
 
-    const result = activeQuestionResult;
-
-    // اگر بازیکن تا پایان زمان جواب نداده، همین حالا یک پاسخ timeout ثبت می‌شود.
+    // اگر بازیکن تا پایان زمان جواب نداده، timeout را ثبت کن.
+    // activeQuestionTransitioned را قبل از selectAnswer نمی‌گذاریم تا selectAnswer
+    // نتواند انتقال به سؤال بعدی را به‌دلیل همین قفل متوقف کند.
     if (!activeQuestionAnswered) {
         try {
             await selectAnswer(-1, question.id, questionIndex, true);
-            return;
-        } catch (_) {
-            return;
-        }
+        } catch (_) {}
+        // selectAnswer بعد از ثبت timeout نتیجه را در activeQuestionResult می‌گذارد.
     }
+
+    if (activeQuestionTransitioned || activeQuestionIndex !== questionIndex) return;
+    activeQuestionTransitioned = true;
+
+    const result = activeQuestionResult;
 
     // همه بازیکنان بر اساس زمان شروع رسمی سؤال حرکت می‌کنند، نه زمان پاسخ خودشان.
     if (result?.status === 'eliminated') {
@@ -3456,15 +3478,31 @@ window.addEventListener('load', async function() {
 });
 
 document.addEventListener('visibilitychange', function() {
-    if (!document.hidden && GameState.currentScreen === 'game' && activeQuestionIndex !== null) {
-        const q = GameState.questions[activeQuestionIndex];
-        if (q) {
-            const remaining = getQuestionRemainingMs(activeQuestionIndex, q);
-            if (remaining <= 0) {
-                finishQuestionWindow(q, activeQuestionIndex);
+    if (!document.hidden) {
+        // Android ممکن است interval/Realtime را در پس‌زمینه متوقف کند؛ به محض برگشت
+        // صفحه، وضعیت واقعی بازی را بدون نیاز به Refresh دوباره می‌خوانیم.
+        if (GameState.currentPlayer.id) checkPlayerStartState(true);
+
+        if (GameState.currentScreen === 'game' && activeQuestionIndex !== null) {
+            const q = GameState.questions[activeQuestionIndex];
+            if (q) {
+                const remaining = getQuestionRemainingMs(activeQuestionIndex, q);
+                if (remaining <= 0) finishQuestionWindow(q, activeQuestionIndex);
             }
         }
     }
+});
+
+window.addEventListener('focus', function() {
+    if (GameState.currentPlayer.id) checkPlayerStartState(true);
+});
+
+window.addEventListener('pageshow', function() {
+    if (GameState.currentPlayer.id) checkPlayerStartState(true);
+});
+
+window.addEventListener('online', function() {
+    if (GameState.currentPlayer.id) checkPlayerStartState(true);
 });
 
 window.addEventListener('beforeunload', function(e) {
