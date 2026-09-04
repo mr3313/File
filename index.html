@@ -1179,125 +1179,6 @@
             .game-title { font-size: 22px; }
         }
 
-
-        /* ==================== LIVE QUIZ UX / SYNC PATCH ==================== */
-        .game-screen {
-            background:
-                radial-gradient(circle at 10% 0%, rgba(99,102,241,.08), transparent 34%),
-                var(--light);
-        }
-        .game-header {
-            position: sticky;
-            top: 0;
-            z-index: 20;
-            backdrop-filter: blur(10px);
-            background: rgba(255,255,255,.94);
-        }
-        .question-card {
-            position: relative;
-            overflow: hidden;
-            will-change: transform, opacity;
-        }
-        .question-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            right: 0;
-            left: 0;
-            height: 4px;
-            background: linear-gradient(90deg, var(--primary), var(--secondary));
-        }
-        .question-live-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 7px;
-            padding: 6px 11px;
-            border-radius: var(--r-full);
-            background: var(--primary-tint);
-            color: var(--primary);
-            font-size: 12px;
-            font-weight: 800;
-            margin-bottom: 12px;
-        }
-        .question-live-badge::before {
-            content: '';
-            width: 7px;
-            height: 7px;
-            border-radius: 50%;
-            background: currentColor;
-            animation: livePulse 1.2s ease-in-out infinite;
-        }
-        @keyframes livePulse {
-            0%,100% { opacity: .35; transform: scale(.8); }
-            50% { opacity: 1; transform: scale(1); }
-        }
-        .answer-feedback {
-            min-height: 46px;
-            margin-top: 16px;
-            padding: 10px 14px;
-            border-radius: var(--r-md);
-            background: var(--light);
-            color: var(--text-secondary);
-            font-size: 13.5px;
-            font-weight: 700;
-            text-align: center;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: var(--transition);
-        }
-        .answer-feedback.success {
-            background: var(--success-tint);
-            color: #166534;
-        }
-        .answer-feedback.wrong {
-            background: var(--danger-tint);
-            color: #991b1b;
-        }
-        .answer-feedback.waiting {
-            background: var(--primary-tint);
-            color: var(--primary);
-        }
-        .answer-feedback.timeout {
-            background: var(--warning-tint);
-            color: #8a5a06;
-        }
-        .timer-value {
-            min-width: 92px;
-            transition: transform .15s ease;
-        }
-        .timer-value.urgent {
-            animation: timerPulse .8s ease-in-out infinite;
-        }
-        @keyframes timerPulse {
-            0%,100% { transform: scale(1); }
-            50% { transform: scale(1.06); }
-        }
-        .sync-status {
-            pointer-events: none;
-        }
-        @media (max-width: 480px) {
-            .game-header {
-                padding: 10px 0;
-            }
-            .game-header-content {
-                padding: 0 12px;
-            }
-            .game-header .progress-bar {
-                margin: 10px 0;
-            }
-            .question-card {
-                margin-top: 4px;
-                box-shadow: 0 8px 26px rgba(15,23,42,.10);
-            }
-            .question-live-badge {
-                margin-bottom: 9px;
-            }
-            .answer-feedback {
-                font-size: 12.5px;
-            }
-        }
-
         </style>
 </head>
 <body>
@@ -1491,7 +1372,6 @@
     <div class="container game-container">
         <div class="question-card">
             <div class="timer-box" aria-live="polite">⏱️ زمان باقی‌مانده: <span id="questionTimer" class="timer-value">--</span></div>
-            <div id="answerFeedback" class="answer-feedback" aria-live="polite">برای پاسخ، یکی از گزینه‌ها را انتخاب کنید.</div>
             <div class="question-text" id="gameQuestionText">
                 بارگذاری سؤال...
             </div>
@@ -2253,11 +2133,7 @@ function handleGameStatusChange() {
         const me = GameState.players.find(p => p.id === GameState.currentPlayer.id);
         if (me && me.status === 'playing') {
             GameState.currentPlayer = { ...GameState.currentPlayer, ...me };
-
-            // در میانه یک سؤال، eventهای تکراری games نباید سؤال را از نو باز کنند.
-            if (GameState.currentScreen !== 'game' || activeQuestionIndex === null) {
-                startGameForPlayer();
-            }
+            startGameForPlayer();
         }
     } else if (GameState.gameStatus === 'finished') {
         finishGame();
@@ -2285,7 +2161,7 @@ function startPlayerStartWatcher() {
         } catch (error) {
             console.warn('Player start watcher:', error);
         }
-    }, 1000);
+    }, 1500);
 }
 
 function stopPlayerStartWatcher() {
@@ -2305,11 +2181,6 @@ function updateAllViews() {
 
 function updateCurrentGameQuestionIfNeeded() {
     if (GameState.currentScreen !== 'game' || !GameState.currentPlayer.id) return;
-
-    // submit_answer_secure ممکن است current_question_index بازیکن را فوراً جلو ببرد.
-    // تا پایان زمان سؤال فعلی، UI نباید این تغییر دیتابیس را روی صفحه اعمال کند.
-    if (activeQuestionIndex !== null && !activeQuestionTransitioned) return;
-
     const index = Number(GameState.currentPlayer.currentQuestionIndex || 0);
     if (GameState.gameStatus === 'active' && GameState.questions[index]) {
         loadQuestion(index);
@@ -2796,58 +2667,20 @@ async function adminStartGame() {
 
     try {
         setSyncStatus('syncing', '⏳ در حال شروع مسابقه...');
-
-        // یک timestamp واحد برای کل دور؛ همه بازیکنان برنامه زمانی یکسانی خواهند داشت.
-        const roundStartIso = new Date().toISOString();
-
         await queryOrThrow(
-            supabaseClient
-                .from('players')
-                .update({
-                    status: 'playing',
-                    current_question_index: 0,
-                    correct_answers: 0,
-                    eliminated_at: null,
-                    finished_at: null,
-                    current_question_started_at: roundStartIso
-                })
-                .eq('game_id', GAME_ID)
-                .eq('status', 'waiting'),
+            supabaseClient.from('players').update({ status: 'playing', current_question_index: 0, correct_answers: 0, eliminated_at: null, finished_at: null, current_question_started_at: new Date().toISOString() }).eq('game_id', GAME_ID).eq('status', 'waiting'),
             'فعال‌سازی بازیکنان'
         );
-
-        // اول وضعیت محلی و جدول games را روی یک زمان مشترک می‌گذاریم.
         await queryOrThrow(
-            supabaseClient
-                .from('games')
-                .update({
-                    status: 'active',
-                    current_question_index: 0,
-                    started_at: roundStartIso,
-                    finished_at: null
-                })
-                .eq('id', GAME_ID),
+            supabaseClient.from('games').update({ status: 'active', current_question_index: 0, started_at: new Date().toISOString(), finished_at: null }).eq('id', GAME_ID),
             'شروع مسابقه'
         );
-
-        // game_state فقط برای هماهنگی پنل مدیریت نگه داشته می‌شود.
         await syncGameState('active', 0);
-
-        GameState.gameStatus = 'active';
-        GameState.game = {
-            ...(GameState.game || {}),
-            status: 'active',
-            current_question_index: 0,
-            started_at: roundStartIso,
-            finished_at: null
-        };
-
-        // بازیکنان را فقط یک بار بعد از شروع قطعی تازه می‌کنیم.
+        await loadGame();
         await loadPlayers();
         updateAllViews();
-        setSyncStatus('synced', '✓ مسابقه شروع شد؛ همه هم‌زمان وارد سؤال اول می‌شوند');
-
-        alert('✓ مسابقه شروع شد! همه بازیکنان با زمان‌بندی مشترک وارد سؤال اول می‌شوند.');
+        setSyncStatus('synced', '✓ مسابقه شروع شد');
+        alert('✓ مسابقه شروع شد!');
     } catch (error) {
         reportSupabaseError('شروع مسابقه', error);
     }
@@ -2909,198 +2742,64 @@ async function setGlobalQuestionIndex(index) {
 }
 
 let questionTimerInterval = null;
-let questionAdvanceTimeout = null;
 let activeQuestionId = null;
-let activeQuestionIndex = null;
 let activeQuestionStartedAt = null;
-let activeQuestionLimitSeconds = 30;
-let activeQuestionAnswered = false;
-let activeQuestionResult = null;
-let activeQuestionTransitioned = false;
 
 function stopQuestionTimer() {
     if (questionTimerInterval) clearInterval(questionTimerInterval);
     questionTimerInterval = null;
-    if (questionAdvanceTimeout) clearTimeout(questionAdvanceTimeout);
-    questionAdvanceTimeout = null;
-}
-
-function getScheduledQuestionStartMs(questionIndex) {
-    const gameStart = GameState.game?.started_at;
-    if (!gameStart) return Date.now();
-
-    let startMs = new Date(gameStart).getTime();
-    if (!Number.isFinite(startMs)) return Date.now();
-
-    for (let i = 0; i < questionIndex; i++) {
-        const q = GameState.questions[i];
-        startMs += Math.max(5, Number(q?.timeLimitSeconds || 30)) * 1000;
-    }
-    return startMs;
-}
-
-function getQuestionRemainingMs(questionIndex, question) {
-    const startMs = getScheduledQuestionStartMs(questionIndex);
-    const limitMs = Math.max(5, Number(question?.timeLimitSeconds || 30)) * 1000;
-    return Math.max(0, startMs + limitMs - Date.now());
-}
-
-function setAnswerFeedback(message, type = '') {
-    const el = document.getElementById('answerFeedback');
-    if (!el) return;
-    el.className = `answer-feedback ${type}`.trim();
-    el.textContent = message;
-}
-
-function disableQuestionOptions() {
-    document.querySelectorAll('.option-btn').forEach(btn => {
-        btn.disabled = true;
-    });
-}
-
-function enableQuestionOptions() {
-    document.querySelectorAll('.option-btn').forEach(btn => {
-        btn.disabled = false;
-    });
 }
 
 function startQuestionTimer(question, questionIndex) {
     stopQuestionTimer();
-
     activeQuestionId = question.id;
-    activeQuestionIndex = questionIndex;
-    activeQuestionLimitSeconds = Math.max(5, Number(question.timeLimitSeconds || 30));
-    activeQuestionStartedAt = new Date(getScheduledQuestionStartMs(questionIndex)).toISOString();
-    activeQuestionAnswered = false;
-    activeQuestionResult = null;
-    activeQuestionTransitioned = false;
-
+    activeQuestionStartedAt = GameState.currentPlayer.currentQuestionStartedAt || new Date().toISOString();
+    const limit = Math.max(5, Number(question.timeLimitSeconds || 30));
+    const startedMs = new Date(activeQuestionStartedAt).getTime();
     const timerEl = document.getElementById('questionTimer');
-    const endMs = getScheduledQuestionStartMs(questionIndex) + activeQuestionLimitSeconds * 1000;
-
     const tick = () => {
-        const remainingMs = Math.max(0, endMs - Date.now());
-        const remaining = Math.ceil(remainingMs / 1000);
-
+        const elapsed = Math.max(0, (Date.now() - startedMs) / 1000);
+        const remaining = Math.max(0, Math.ceil(limit - elapsed));
         if (timerEl) {
             timerEl.textContent = `${remaining} ثانیه`;
-            timerEl.classList.toggle(
-                'warning',
-                remaining <= Math.max(5, Math.ceil(activeQuestionLimitSeconds * 0.2))
-            );
-            timerEl.classList.toggle('urgent', remaining <= 5);
+            timerEl.classList.toggle('warning', remaining <= Math.max(5, Math.ceil(limit * 0.2)));
         }
-
-        if (remainingMs <= 0) {
+        if (remaining <= 0) {
             stopQuestionTimer();
-            finishQuestionWindow(question, questionIndex);
+            selectAnswer(-1, question.id, questionIndex, true);
         }
     };
-
     tick();
-    questionTimerInterval = setInterval(tick, 100);
-}
-
-async function finishQuestionWindow(question, questionIndex) {
-    if (activeQuestionTransitioned || activeQuestionIndex !== questionIndex) return;
-    activeQuestionTransitioned = true;
-
-    const result = activeQuestionResult;
-
-    // اگر بازیکن تا پایان زمان جواب نداده، همین حالا یک پاسخ timeout ثبت می‌شود.
-    if (!activeQuestionAnswered) {
-        try {
-            await selectAnswer(-1, question.id, questionIndex, true);
-            return;
-        } catch (_) {
-            return;
-        }
-    }
-
-    // همه بازیکنان بر اساس زمان شروع رسمی سؤال حرکت می‌کنند، نه زمان پاسخ خودشان.
-    if (result?.status === 'eliminated') {
-        document.getElementById('eliminatedCorrectCount').textContent =
-            GameState.currentPlayer.correctAnswers;
-        document.getElementById('eliminatedLastQuestion').textContent = questionIndex + 1;
-        switchScreen('eliminated');
-        return;
-    }
-
-    if (result?.status === 'winner') {
-        await loadWinners().catch(() => {});
-        watchResults();
-        return;
-    }
-
-    const nextIndex = Number(
-        result?.current_question_index ??
-        (questionIndex + 1)
-    );
-
-    if (nextIndex >= GameState.questions.length) {
-        finishGame();
-        return;
-    }
-
-    // یک انتقال نرم و مشترک: پاسخ ۲ ثانیه دیده شده، سپس تا پایان پنجره سؤال صبر می‌کنیم.
-    setAnswerFeedback('✓ زمان این سؤال تمام شد؛ سؤال بعدی هم‌زمان برای همه باز می‌شود.', 'waiting');
-    setTimeout(() => {
-        if (GameState.currentPlayer.status === 'playing') {
-            loadQuestion(nextIndex, true);
-        }
-    }, 120);
+    questionTimerInterval = setInterval(tick, 250);
 }
 
 function startGameForPlayer() {
     if (GameState.gameStatus !== 'active') return;
     if (GameState.currentPlayer.status !== 'playing') return;
-
     const index = Number(GameState.currentPlayer.currentQuestionIndex || 0);
     if (index >= GameState.questions.length) return;
-
     stopPlayerStartWatcher();
-    switchScreen('game');
     loadQuestion(index);
+    switchScreen('game');
 }
 
-function loadQuestion(questionIndex, force = false) {
+function loadQuestion(questionIndex) {
     if (questionIndex >= GameState.questions.length) {
         finishGame();
         return;
     }
-
     const question = GameState.questions[questionIndex];
     if (!question) return;
-
-    // Realtime ممکن است یک تغییر تکراری برای همان سؤال بفرستد.
-    // در این حالت DOM و تایمر را دوباره از صفر نمی‌سازیم.
-    if (!force && activeQuestionIndex === questionIndex &&
-        activeQuestionId === question.id &&
-        GameState.currentScreen === 'game') {
-        document.getElementById('correctAnswersCount').textContent =
-            GameState.currentPlayer.correctAnswers;
-        document.getElementById('remainingPlayersCount').textContent =
-            GameState.players.filter(p => p.status === 'playing').length;
-        return;
-    }
-
-    stopQuestionTimer();
-
     document.getElementById('currentQuestionNum').textContent = questionIndex + 1;
-    document.getElementById('correctAnswersCount').textContent =
-        GameState.currentPlayer.correctAnswers;
-    document.getElementById('remainingPlayersCount').textContent =
-        GameState.players.filter(p => p.status === 'playing').length;
-
+    document.getElementById('correctAnswersCount').textContent = GameState.currentPlayer.correctAnswers;
+    document.getElementById('remainingPlayersCount').textContent = GameState.players.filter(p => p.status === 'playing').length;
     const total = Math.max(GameState.questions.length, 10);
-    document.getElementById('progressBarFill').style.width =
-        (((questionIndex + 1) / total) * 100) + '%';
-
-    const questionText = document.getElementById('gameQuestionText');
-    questionText.textContent = question.text;
+    document.getElementById('progressBarFill').style.width = (((questionIndex + 1) / total) * 100) + '%';
+    document.getElementById('gameQuestionText').textContent = question.text;
 
     const optionsGrid = document.getElementById('optionsGrid');
     optionsGrid.innerHTML = '';
+    startQuestionTimer(question, questionIndex);
 
     question.options.forEach((option, index) => {
         const btn = document.createElement('button');
@@ -3109,27 +2808,14 @@ function loadQuestion(questionIndex, force = false) {
         btn.onclick = () => selectAnswer(index, question.id, questionIndex);
         optionsGrid.appendChild(btn);
     });
-
-    setAnswerFeedback('برای پاسخ، یکی از گزینه‌ها را انتخاب کنید.');
-    startQuestionTimer(question, questionIndex);
 }
 
 async function selectAnswer(selectedIndex, questionId, questionIndex, timedOut = false) {
     if (!GameState.currentPlayer.id || GameState.currentPlayer.status !== 'playing') return;
 
-    // جلوگیری از دوبار کلیک یا timeout هم‌زمان با پاسخ کاربر.
-    if (activeQuestionIndex === questionIndex && activeQuestionAnswered) return;
-
-    activeQuestionAnswered = true;
-
+    stopQuestionTimer();
     const optionButtons = document.querySelectorAll('.option-btn');
     optionButtons.forEach(btn => btn.disabled = true);
-
-    if (timedOut) {
-        const timerEl = document.getElementById('questionTimer');
-        if (timerEl) timerEl.textContent = '⏰ زمان تمام شد';
-        setAnswerFeedback('⏰ زمان پاسخ‌گویی تمام شد؛ در حال ثبت نتیجه...', 'timeout');
-    }
 
     try {
         const result = await queryOrThrow(
@@ -3146,75 +2832,41 @@ async function selectAnswer(selectedIndex, questionId, questionIndex, timedOut =
         const isCorrect = !!result?.is_correct;
         const correctIndex = Number(result?.correct_answer);
 
-        if (optionButtons[correctIndex]) {
-            optionButtons[correctIndex].classList.add('correct');
-        }
-
-        if (optionButtons[selectedIndex] && selectedIndex >= 0) {
-            optionButtons[selectedIndex].classList.add(isCorrect ? 'selected' : 'wrong');
-        }
-
         if (timedOut) {
-            setAnswerFeedback(
-                '⏰ زمان تمام شد. پاسخ درست مشخص شده؛ منتظر پایان پنجره سؤال هستیم.',
-                'timeout'
-            );
-        } else if (isCorrect) {
-            setAnswerFeedback(
-                '✓ پاسخ شما درست بود. نتیجه ثبت شد؛ تا پایان زمان سؤال همین‌جا بمانید.',
-                'success'
-            );
-        } else {
-            setAnswerFeedback(
-                '✕ پاسخ شما نادرست بود. پاسخ درست مشخص شده؛ تا پایان زمان سؤال صبر کنید.',
-                'wrong'
-            );
+            const timerEl = document.getElementById('questionTimer');
+            if (timerEl) timerEl.textContent = '⏰ زمان تمام شد';
+        }
+
+        if (optionButtons[correctIndex]) optionButtons[correctIndex].classList.add('correct');
+        if (optionButtons[selectedIndex]) {
+            optionButtons[selectedIndex].classList.add(isCorrect ? 'selected' : 'wrong');
         }
 
         GameState.currentPlayer = {
             ...GameState.currentPlayer,
             status: result.status,
-            currentQuestionIndex: Number(result.current_question_index ?? questionIndex),
+            currentQuestionIndex: Number(result.current_question_index || 0),
             correctAnswers: Number(result.correct_answers || 0),
-            // این فیلد دیگر مبنای زمان‌بندی UI نیست؛ زمان‌بندی رسمی از games.started_at محاسبه می‌شود.
             currentQuestionStartedAt: result.current_question_started_at || null
         };
 
-        activeQuestionResult = result;
-
-        // نتیجه بلافاصله نمایش داده می‌شود، اما سؤال بعدی هرگز بلافاصله باز نمی‌شود.
-        // transition فقط در پایان پنجره زمانی سؤال انجام می‌شود.
-        const remainingMs = getQuestionRemainingMs(questionIndex, GameState.questions[questionIndex]);
-        const feedbackHoldMs = Math.min(2000, Math.max(0, remainingMs));
-
-        if (!timedOut && feedbackHoldMs > 0) {
-            setTimeout(() => {
-                if (activeQuestionIndex === questionIndex &&
-                    !activeQuestionTransitioned &&
-                    activeQuestionResult) {
-                    const message = activeQuestionResult.status === 'eliminated'
-                        ? '✕ پاسخ ثبت شد. تا پایان زمان این سؤال منتظر بمانید.'
-                        : activeQuestionResult.status === 'winner'
-                            ? '🏆 نتیجه ثبت شد. تا پایان زمان این سؤال منتظر بمانید.'
-                            : '✓ نتیجه نمایش داده شد. تا پایان زمان این سؤال منتظر بمانید.';
-                    setAnswerFeedback(message, activeQuestionResult.status === 'eliminated' ? 'wrong' : 'waiting');
-                }
-            }, Math.min(2000, feedbackHoldMs));
-        }
-
-        // اگر تایمر به‌خاطر درخواست شبکه کمی دیر اجرا شد، زمان باقی‌مانده را مستقل محاسبه می‌کنیم.
-        if (remainingMs <= 0) {
-            await finishQuestionWindow(GameState.questions[questionIndex], questionIndex);
+        if (result.status === 'winner') {
+            await loadWinners();
+            switchScreen('waiting');
+            setTimeout(() => { alert('🏆 تبریک! شما برنده مسابقه شدید!'); watchResults(); }, 500);
+        } else if (result.status === 'eliminated') {
+            document.getElementById('eliminatedCorrectCount').textContent = GameState.currentPlayer.correctAnswers;
+            document.getElementById('eliminatedLastQuestion').textContent = questionIndex + 1;
+            setTimeout(() => switchScreen('eliminated'), 1200);
+        } else {
+            const nextIndex = Number(result.current_question_index);
+            setTimeout(() => loadQuestion(nextIndex), 1200);
         }
     } catch (error) {
-        // فقط در خطای واقعی شبکه/DB امکان تلاش مجدد داده می‌شود.
-        activeQuestionAnswered = false;
-        activeQuestionResult = null;
-        enableQuestionOptions();
         reportSupabaseError('ثبت پاسخ', error);
+        optionButtons.forEach(btn => btn.disabled = false);
     }
 }
-
 async function eliminatePlayer(questionIndex) {
     // Status changes are performed atomically by submit_answer_secure().
     if (GameState.currentPlayer?.status === 'eliminated') {
@@ -3395,18 +3047,6 @@ window.addEventListener('load', async function() {
     await initializeGame();
     console.log('🎮 مبسا بارگذاری شد');
     console.log('📡 Sync: Supabase Realtime');
-});
-
-document.addEventListener('visibilitychange', function() {
-    if (!document.hidden && GameState.currentScreen === 'game' && activeQuestionIndex !== null) {
-        const q = GameState.questions[activeQuestionIndex];
-        if (q) {
-            const remaining = getQuestionRemainingMs(activeQuestionIndex, q);
-            if (remaining <= 0) {
-                finishQuestionWindow(q, activeQuestionIndex);
-            }
-        }
-    }
 });
 
 window.addEventListener('beforeunload', function(e) {
