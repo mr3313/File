@@ -470,7 +470,8 @@
             broadcastChannel: null,
             isAdmin: false,
             aboutUsData: null,
-            questionsReady: null
+            questionsReady: null,
+            gameStartAt: null
         };
 
         const FA_DIGITS = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
@@ -521,7 +522,8 @@
                     player: State.player,
                     currentQIndex: State.currentQIndex,
                     qStartTime: State.qStartTime,
-                    score: State.score
+                    score: State.score,
+                    gameStartAt: State.gameStartAt
                 }));
             } catch (e) {}
         }
@@ -543,6 +545,7 @@
             State.currentQIndex = saved.currentQIndex || 0;
             State.qStartTime = saved.qStartTime || null;
             State.score = saved.score || 0;
+            State.gameStartAt = saved.gameStartAt || null;
 
             try {
                 var res = await supabaseClient.from('players').select('*').eq('id', saved.player.id).maybeSingle();
@@ -575,9 +578,10 @@
                                 await evaluateAnswerAndNext();
                                 return;
                             }
-                            renderQuestion(qIdx, remaining);
+                            renderQuestion(qIdx, remaining, State.qStartTime);
                         } else {
-                            renderQuestion(qIdx);
+                            var restoredStartAt = getQuestionStartAt(qIdx);
+                            renderQuestion(qIdx, undefined, restoredStartAt || undefined);
                         }
                     } else {
                         showInlineGameError("خطا در دریافت سوالات. لطفاً صفحه را رفرش کنید.");
@@ -765,10 +769,13 @@
                             switchScreen('winner');
                         }, 1200);
                     } else {
+                        var nextIndex = State.currentQIndex + 1;
+                        var nextStartAt = getQuestionStartAt(nextIndex);
+                        var delayToNext = nextStartAt ? Math.max(0, nextStartAt - Date.now()) : 1200;
                         setTimeout(function() {
                             State.answering = false;
-                            renderQuestion(State.currentQIndex + 1);
-                        }, 1200);
+                            renderQuestion(nextIndex, undefined, nextStartAt || undefined);
+                        }, delayToNext);
                     }
                 } else {
                     setTimeout(function() {
@@ -796,7 +803,16 @@
             });
         }
 
-        async function renderQuestion(index, overrideTimeLeft) {
+        function getQuestionStartAt(index) {
+            if (!State.gameStartAt || !State.questions || !State.questions.length) return null;
+            var start = Number(State.gameStartAt);
+            for (var i = 0; i < index; i++) {
+                start += (Number(State.questions[i].time_limit_seconds) || 30) * 1000;
+            }
+            return start;
+        }
+
+        async function renderQuestion(index, overrideTimeLeft, scheduledStartAt) {
             if (State.questions.length > 0 && index >= State.questions.length) {
                 document.getElementById('finalScoreText').textContent = 'امتیاز: ' + toFa(State.score);
                 clearPlayerSession();
@@ -815,8 +831,11 @@
 
             var totalLimit = q.time_limit_seconds || 30;
             
-            // اگر برای اولین بار وارد این سوال شده، زمان شروع واقعی ذخیره می‌شود
-            if (overrideTimeLeft === undefined) {
+            // زمان سوال از ساعت مشترک مسابقه محاسبه می‌شود تا بازیکن و پنل مدیریت
+            // دقیقاً روی یک برنامه زمانی حرکت کنند.
+            if (scheduledStartAt !== undefined && scheduledStartAt !== null) {
+                State.qStartTime = Number(scheduledStartAt);
+            } else if (overrideTimeLeft === undefined) {
                 State.qStartTime = Date.now();
             }
 
@@ -944,20 +963,7 @@
         };
 
         function broadcastQuestionState(q, index) {
-            if (State.isAdmin || !State.broadcastChannel) return;
-            try {
-                State.broadcastChannel.send({
-                    type: 'broadcast',
-                    event: 'QUESTION_STATE',
-                    payload: {
-                        index: index,
-                        total: State.questions.length,
-                        question_text: q.question_text,
-                        options: [q.option_a, q.option_b, q.option_c, q.option_d],
-                        time_limit: q.time_limit_seconds || 30
-                    }
-                });
-            } catch (e) {}
+            // نمای زنده مدیر مستقل است و دیگر از پیام بازیکنان تغذیه نمی‌شود.
         }
 
         /* توجه مهم برای مسابقات پرجمعیت (۲۰۰ تا ۵۰۰ نفر):
@@ -968,34 +974,92 @@
            معکوس نمای مدیر کاملاً محلی و فقط بر اساس همان یک پیام QUESTION_STATE محاسبه
            می‌شود؛ هیچ ترافیک شبکه‌ی اضافی‌ای لازم نیست. */
         var adminLiveCountdownInterval = null;
-        function updateLiveAdminQuestion(payload) {
-            var emptyMsg = document.getElementById('liveEmptyMsg');
-            var box = document.getElementById('liveQBox');
-            if (emptyMsg) emptyMsg.classList.add('hidden');
-            if (box) box.classList.remove('hidden');
+        var adminLiveStartAt = null;
 
-            document.getElementById('liveQIndexText').textContent = 'سوال ' + toFa(payload.index + 1) + ' از ' + toFa(payload.total);
-            document.getElementById('liveQuestionTitle').textContent = payload.question_text;
-
-            var optBox = document.getElementById('liveOptionsBox');
-            optBox.innerHTML = '';
-            payload.options.forEach(function(opt, idx) {
-                var div = document.createElement('div');
-                div.className = 'live-opt';
-                div.textContent = toFa(idx + 1) + '. ' + opt;
-                optBox.appendChild(div);
-            });
-
+        function stopAdminLiveQuestions() {
             clearInterval(adminLiveCountdownInterval);
-            var timeEl = document.getElementById('liveTimeText');
-            var remaining = payload.time_limit || 0;
+            adminLiveCountdownInterval = null;
+            adminLiveStartAt = null;
+        }
+
+        function startAdminLiveQuestions(gameStartAt) {
+            stopAdminLiveQuestions();
+            adminLiveStartAt = Number(gameStartAt);
+
             function tick() {
-                if (timeEl) timeEl.textContent = toFa(Math.max(0, remaining)) + ' ثانیه';
-                if (remaining <= 0) { clearInterval(adminLiveCountdownInterval); return; }
-                remaining--;
+                if (!State.questions || State.questions.length === 0 || !adminLiveStartAt) return;
+
+                var now = Date.now();
+                var elapsed = now - adminLiveStartAt;
+                if (elapsed < 0) {
+                    var secs = Math.ceil((adminLiveStartAt - now) / 1000);
+                    document.getElementById('liveEmptyMsg').classList.remove('hidden');
+                    document.getElementById('liveEmptyMsg').textContent = 'شروع مسابقه تا ' + toFa(secs) + ' ثانیه دیگر...';
+                    document.getElementById('liveQBox').classList.add('hidden');
+                    return;
+                }
+
+                var cursor = 0;
+                var index = -1;
+                var questionStart = adminLiveStartAt;
+
+                for (var i = 0; i < State.questions.length; i++) {
+                    var durationMs = (Number(State.questions[i].time_limit_seconds) || 30) * 1000;
+                    if (now < questionStart + durationMs) {
+                        index = i;
+                        break;
+                    }
+                    questionStart += durationMs;
+                    cursor += durationMs;
+                }
+
+                var emptyMsg = document.getElementById('liveEmptyMsg');
+                var box = document.getElementById('liveQBox');
+
+                if (index === -1) {
+                    if (emptyMsg) {
+                        emptyMsg.classList.remove('hidden');
+                        emptyMsg.textContent = 'همه سوالات به پایان رسیدند؛ منتظر ریست مسابقه باشید.';
+                    }
+                    if (box) box.classList.add('hidden');
+                    return;
+                }
+
+                var q = State.questions[index];
+                var total = Number(q.time_limit_seconds) || 30;
+                var elapsedInQuestion = now - questionStart;
+                var remainingExact = Math.max(0, total - elapsedInQuestion / 1000);
+                var remaining = Math.ceil(remainingExact);
+
+                if (emptyMsg) emptyMsg.classList.add('hidden');
+                if (box) box.classList.remove('hidden');
+
+                document.getElementById('liveQIndexText').textContent = 'سوال ' + toFa(index + 1) + ' از ' + toFa(State.questions.length);
+                document.getElementById('liveQuestionTitle').textContent = q.question_text;
+
+                var optBox = document.getElementById('liveOptionsBox');
+                optBox.innerHTML = '';
+                var options = [q.option_a, q.option_b, q.option_c, q.option_d];
+                var revealCorrect = remainingExact <= 1.0;
+                options.forEach(function(opt, idx) {
+                    var div = document.createElement('div');
+                    div.className = 'live-opt';
+                    div.textContent = toFa(idx + 1) + '. ' + opt;
+                    if (revealCorrect && idx === Number(q.correct_option)) {
+                        div.classList.add('correct');
+                        div.style.background = 'var(--success)';
+                        div.style.color = 'white';
+                        div.style.borderColor = 'var(--success)';
+                        div.textContent += '  ✅ پاسخ صحیح';
+                    }
+                    optBox.appendChild(div);
+                });
+
+                document.getElementById('liveTimeText').textContent = toFa(remaining) + ' ثانیه';
             }
+
             tick();
-            adminLiveCountdownInterval = setInterval(tick, 1000);
+            adminLiveCountdownInterval = setInterval(tick, 100);
         }
 
         document.getElementById('adminForm').onsubmit = async function(e) {
@@ -1034,8 +1098,20 @@
             try {
                 await fetchQuestions();
                 if (State.questions.length === 0) { alert("سؤالی ثبت نشده است."); return; }
-                await State.broadcastChannel.send({ type: 'broadcast', event: 'START_GAME' });
-                alert("دستور شروع مسابقه صادر شد.");
+
+                // 5 ثانیه فرصت شبکه می‌دهیم تا همه بازیکنان پیام را بگیرند؛
+                // سپس همه دقیقاً در همین timestamp وارد سوال اول می‌شوند.
+                var gameStartAt = Date.now() + 5000;
+                State.gameStartAt = gameStartAt;
+
+                await State.broadcastChannel.send({
+                    type: 'broadcast',
+                    event: 'START_GAME',
+                    payload: { game_start_at: gameStartAt }
+                });
+
+                startAdminLiveQuestions(gameStartAt);
+                alert("دستور شروع مسابقه صادر شد. شروع رسمی تا ۵ ثانیه دیگر انجام می‌شود.");
                 fetchPlayersList();
             } catch (e) {
                 console.error(e);
@@ -1051,6 +1127,8 @@
             try {
                 var res = await supabaseClient.rpc('reset_quiz_game', { p_game_id: GAME_ID });
                 if (res.error) throw res.error;
+                stopAdminLiveQuestions();
+                State.gameStartAt = null;
                 await State.broadcastChannel.send({ type: 'broadcast', event: 'RESET_GAME' });
                 alert("مسابقه ریست شد و کلیه شرکت‌کنندگان پاک شدند.");
                 fetchPlayersList();
@@ -1193,7 +1271,7 @@
             }
 
             State.broadcastChannel = supabaseClient.channel('room_' + GAME_ID, { config: { broadcast: { self: true } } })
-                .on('broadcast', { event: 'START_GAME' }, async function() {
+                .on('broadcast', { event: 'START_GAME' }, async function(data) {
                     if (State.player && !State.isAdmin) {
                         try {
                             await waitForQuestionsReady(8000);
@@ -1207,11 +1285,23 @@
                             showInlineGameError("خطا در دریافت سوالات. لطفاً صفحه را رفرش کنید.");
                             return;
                         }
+
+                        var payload = data && data.payload ? data.payload : {};
+                        var startAt = Number(payload.game_start_at);
+                        if (!startAt) startAt = Date.now() + 3000;
+                        State.gameStartAt = startAt;
+
+                        // همه بازیکنان و پنل مدیریت از یک لحظه شروع مشترک استفاده می‌کنند.
+                        var waitMs = startAt - Date.now();
+                        if (waitMs > 0) {
+                            await new Promise(function(resolve) { setTimeout(resolve, waitMs); });
+                        }
+
                         try {
                             await supabaseClient.from('players').update({ status: 'playing' }).eq('id', State.player.id);
                         } catch (e) { console.error(e); }
                         switchScreen('game');
-                        renderQuestion(0);
+                        renderQuestion(0, undefined, startAt);
                     }
                 })
                 .on('broadcast', { event: 'RESET_GAME' }, function() {
@@ -1227,9 +1317,6 @@
                         clearPlayerSession();
                         switchScreen('login');
                     }
-                })
-                .on('broadcast', { event: 'QUESTION_STATE' }, function(data) {
-                    if (State.isAdmin) updateLiveAdminQuestion(data.payload);
                 })
                 .subscribe(function(status) {
                     if (status === 'SUBSCRIBED') {
