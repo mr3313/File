@@ -141,8 +141,18 @@
             transition: all 0.2s ease;
         }
         .opt-btn.selected { border-color: var(--primary); background: rgba(99, 102, 241, 0.2); }
-        .opt-btn.correct { background: var(--success) !important; color: white !important; }
-        .opt-btn.wrong { background: var(--danger) !important; color: white !important; }
+        .opt-btn.correct { background: var(--success) !important; color: white !important; animation: revealPop 0.35s ease; }
+        .opt-btn.wrong { background: var(--danger) !important; color: white !important; animation: revealPop 0.35s ease; }
+        @keyframes revealPop { 0% { transform: scale(1); } 40% { transform: scale(1.045); } 100% { transform: scale(1); } }
+
+        /* وقتی کمتر از ۵ ثانیه از زمان سوال باقی مانده، تایمر برای افزایش حس فوریت
+           قرمز و کمی پرزننده می‌شود. صرفاً بصری است و در منطق زمان‌بندی اصلی که بر پایه
+           wall-clock کار می‌کند هیچ تغییری ایجاد نمی‌کند. */
+        .timer-container.timer-warning .timer-circle-progress { stroke: var(--danger); }
+        .timer-container.timer-warning .timer-text { color: var(--danger); animation: timerPulse 0.9s ease-in-out infinite; }
+        @keyframes timerPulse { 0%, 100% { transform: translate(-50%, -50%) scale(1); } 50% { transform: translate(-50%, -50%) scale(1.12); } }
+
+        .players-alive-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); margin-top: 8px; }
 
         .badge { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 800; background: rgba(0, 0, 0, 0.08); color: var(--text-main); }
         .error-msg { background: rgba(239, 68, 68, 0.15); border: 1px solid var(--danger); color: #f87171; padding: 10px; border-radius: var(--r-md); font-size: 13px; margin-bottom: 12px; text-align: right; }
@@ -205,6 +215,7 @@
     <div class="container">
 
         <div id="connBanner" class="conn-banner">در حال تلاش برای اتصال مجدد و همگام‌سازی شبکه...</div>
+        <div id="offlineBanner" class="conn-banner">📶 اتصال اینترنت قطع است؛ به محض وصل شدن به‌طور خودکار ادامه می‌دهیم...</div>
 
         <main id="loginScreen" class="screen active">
             <div class="glass-card">
@@ -265,6 +276,7 @@
 
                 <h3 id="questionTitle" style="font-size: 16px; line-height: 1.6; min-height: 48px;">در حال بارگذاری...</h3>
                 <div id="optionsBox" class="options-grid"></div>
+                <div id="playersAliveBadge" class="players-alive-badge hidden">🟢 <span id="playersAliveCount">-</span> نفر هنوز در مسابقه‌اند</div>
             </div>
         </section>
 
@@ -405,24 +417,50 @@
                 "https://cdnjs.cloudflare.com/ajax/libs/supabase-js/2.39.8/supabase.min.js"
             ];
             var currentIndex = 0;
+            var appStarted = false; // از دوبار اجرا شدن initMabsaApp جلوگیری می‌کند
 
+            /* روی اینترنت ضعیف، منبع اول ممکن است "خراب" نباشد ولی آن‌قدر کند دانلود شود که
+               کاربر عملاً معطل بماند. با یک مهلت ۶ ثانیه‌ای، در صورت کند بودن بیش از حد،
+               بدون این‌که منتظر شکست کامل آن بمانیم، سراغ منبع بعدی می‌رویم؛ اگر همان منبع
+               اول دیرتر با موفقیت لود شد، دیگر تاثیری در برنامه ندارد (با appStarted کنترل می‌شود). */
             function loadScript(src) {
+                var settled = false;
                 var script = document.createElement('script');
                 script.src = src;
+
+                var timeoutId = setTimeout(function() {
+                    if (settled) return;
+                    settled = true;
+                    tryNext();
+                }, 6000);
+
                 script.onload = function() {
-                    window.initMabsaApp();
-                };
-                script.onerror = function() {
-                    currentIndex++;
-                    if (currentIndex < cdnSources.length) {
-                        loadScript(cdnSources[currentIndex]);
-                    } else {
-                        if (typeof showFatalError === 'function') {
-                            showFatalError("خطا در بارگذاری کتابخانه‌ها. لطفاً اتصال اینترنت خود را بررسی کرده و صفحه را رفرش کنید.");
-                        }
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(timeoutId);
+                    if (!appStarted) {
+                        appStarted = true;
+                        window.initMabsaApp();
                     }
                 };
+                script.onerror = function() {
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(timeoutId);
+                    tryNext();
+                };
                 document.head.appendChild(script);
+            }
+
+            function tryNext() {
+                currentIndex++;
+                if (currentIndex < cdnSources.length) {
+                    loadScript(cdnSources[currentIndex]);
+                } else if (!appStarted) {
+                    if (typeof showFatalError === 'function') {
+                        showFatalError("خطا در بارگذاری کتابخانه‌ها. لطفاً اتصال اینترنت خود را بررسی کرده و صفحه را رفرش کنید.");
+                    }
+                }
             }
 
             window.startSupabaseLoading = function() {
@@ -572,7 +610,7 @@
                     switchScreen('winner');
                 } else if (data.status === 'playing') {
                     switchScreen('game');
-                    await waitForQuestionsReady(8000).catch(function(){});
+                    await waitForQuestionsReady(15000).catch(function(){});
                     if (State.questions && State.questions.length > 0) {
                         var qIdx = Math.min(State.currentQIndex, State.questions.length - 1);
                         var q = State.questions[qIdx];
@@ -591,7 +629,23 @@
                             renderQuestion(qIdx, remaining, State.qStartTime);
                         } else {
                             var restoredStartAt = getQuestionStartAt(qIdx);
-                            renderQuestion(qIdx, undefined, restoredStartAt || undefined);
+                            if (restoredStartAt) {
+                                renderQuestion(qIdx, undefined, restoredStartAt);
+                            } else {
+                                // نه در session و نه در State، gameStartAt موجود نیست (مثلاً
+                                // دستگاه/تب جدید). به‌جای شروع نادرست از سوال ۰ با زمان کامل،
+                                // اول از game_state سرور می‌پرسیم که واقعاً الان کجای مسابقه‌ایم.
+                                var gameStateFallback = await fetchGameState();
+                                var schedFallback = gameStateFallback && gameStateFallback.game_start_at
+                                    ? resolveScheduleFromStartAt(Number(gameStateFallback.game_start_at))
+                                    : null;
+                                if (schedFallback && !schedFallback.notStartedYet && !schedFallback.finished) {
+                                    State.gameStartAt = Number(gameStateFallback.game_start_at);
+                                    renderQuestion(schedFallback.index, schedFallback.remainingSeconds, schedFallback.startAtForThisQ);
+                                } else {
+                                    renderQuestion(qIdx, undefined, undefined);
+                                }
+                            }
                         }
                     } else {
                         showInlineGameError("خطا در دریافت سوالات. لطفاً صفحه را رفرش کنید.");
@@ -672,6 +726,9 @@
             var circle = document.getElementById('timerProgress');
             var numDisplay = document.getElementById('timerNumber');
 
+            var timerContainerEl = document.querySelector('.timer-container');
+            var warningTriggered = false;
+
             function tick() {
                 var elapsedSec = (Date.now() - startedAt) / 1000;
                 var timeLeft = total - elapsedSec;
@@ -679,6 +736,18 @@
 
                 if (numDisplay) numDisplay.textContent = toFa(clamped);
                 if (circle) circle.style.strokeDashoffset = 220 - (220 * clamped) / total;
+
+                if (timerContainerEl) {
+                    if (clamped <= 5 && clamped > 0) {
+                        timerContainerEl.classList.add('timer-warning');
+                        if (!warningTriggered) {
+                            warningTriggered = true;
+                            try { if (navigator.vibrate) navigator.vibrate(60); } catch (e) {}
+                        }
+                    } else if (clamped > 5) {
+                        timerContainerEl.classList.remove('timer-warning');
+                    }
+                }
 
                 if (timeLeft <= 0) {
                     clearInterval(State.timerInterval);
@@ -765,6 +834,9 @@
                 if (!result.is_correct && State.selectedOption !== null && btns[State.selectedOption]) {
                     btns[State.selectedOption].classList.add('wrong');
                 }
+                try {
+                    if (navigator.vibrate) navigator.vibrate(result.is_correct ? [40, 60, 40] : [150]);
+                } catch (e) {}
 
                 State.score = result.new_score || 0;
                 updateScoreDisplay();
@@ -822,6 +894,41 @@
             return start;
         }
 
+        /* از همان محاسبه‌ای که در startAdminLiveQuestions برای نمای زنده‌ی مدیر استفاده
+           می‌شود استفاده می‌کند (فقط این‌بار به‌صورت یک تابع مستقل قابل استفاده مجدد): با
+           داشتن لحظه‌ی شروع کل مسابقه، مشخص می‌کند الان دقیقاً کدام سوال و چند ثانیه از آن
+           باقی مانده است. اگر مسابقه هنوز شروع نشده یا تمام شده باشد، آن را هم گزارش می‌کند. */
+        function resolveScheduleFromStartAt(startAt) {
+            if (!startAt || !State.questions || !State.questions.length) return null;
+            var now = Date.now();
+            var cursor = Number(startAt);
+            if (now < cursor) return { notStartedYet: true, msUntilStart: cursor - now };
+
+            for (var i = 0; i < State.questions.length; i++) {
+                var durMs = (Number(State.questions[i].time_limit_seconds) || 30) * 1000;
+                if (now < cursor + durMs) {
+                    return { index: i, remainingSeconds: Math.max(0, Math.ceil((cursor + durMs - now) / 1000)), startAtForThisQ: cursor };
+                }
+                cursor += durMs;
+            }
+            return { finished: true };
+        }
+
+        /* از همان الگوی key/value جدول settings استفاده می‌کند که از قبل برای «درباره ما»
+           به کار رفته (همان دسترسی خواندن عمومی که آنجا ثابت‌شده کار می‌کند). اگر بنا به هر
+           دلیلی این ردیف وجود نداشته باشد یا خواندنش رد شود، فقط null برمی‌گرداند و هیچ
+           تاثیری روی مسیر اصلی (که بر پایه‌ی Broadcast است) نمی‌گذارد — این صرفاً یک شبکه‌ی
+           ایمنی اضافه است. */
+        async function fetchGameState() {
+            try {
+                var res = await supabaseClient.from('settings').select('value').eq('key', 'game_state').maybeSingle();
+                if (res.error || !res.data || !res.data.value) return null;
+                return res.data.value;
+            } catch (e) {
+                return null;
+            }
+        }
+
         async function renderQuestion(index, overrideTimeLeft, scheduledStartAt) {
             if (State.questions.length > 0 && index >= State.questions.length) {
                 document.getElementById('finalScoreText').textContent = 'امتیاز: ' + toFa(State.score);
@@ -870,6 +977,43 @@
             broadcastQuestionState(q, index);
             var initialTime = (overrideTimeLeft !== undefined) ? overrideTimeLeft : totalLimit;
             startTimer(initialTime, totalLimit);
+            updatePlayersAliveCount(); // فقط یک‌بار به‌ازای هر سوال، نه هر ثانیه
+        }
+
+        /* شمارش بازیکنان زنده فقط یک‌بار در ابتدای هر سوال انجام می‌شود (نه هر ثانیه یا
+           هر تیک تایمر) تا با تعداد زیاد بازیکن همزمان، فشار غیرضروری روی دیتابیس ایجاد
+           نشود؛ از count:'exact', head:true استفاده می‌شود که فقط عدد را برمی‌گرداند، نه
+           ردیف‌ها را. کاملاً غیرحیاتی است: اگر شکست بخورد، فقط badge مخفی می‌ماند و هیچ
+           تاثیری روی روند اصلی بازی ندارد. */
+        async function updatePlayersAliveCount() {
+            var badge = document.getElementById('playersAliveBadge');
+            var countEl = document.getElementById('playersAliveCount');
+            if (!badge || !countEl) return;
+            try {
+                var res = await supabaseClient
+                    .from('players')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('game_id', GAME_ID)
+                    .in('status', ['playing', 'winner']);
+                if (res.error || typeof res.count !== 'number') { badge.classList.add('hidden'); return; }
+                countEl.textContent = toFa(res.count);
+                badge.classList.remove('hidden');
+            } catch (e) {
+                badge.classList.add('hidden');
+            }
+        }
+
+        var QUESTIONS_CACHE_KEY = 'mabsa_questions_cache_' + GAME_ID;
+
+        function cacheQuestions(list) {
+            try { localStorage.setItem(QUESTIONS_CACHE_KEY, JSON.stringify(list)); } catch (e) {}
+        }
+
+        function readCachedQuestions() {
+            try {
+                var raw = localStorage.getItem(QUESTIONS_CACHE_KEY);
+                return raw ? JSON.parse(raw) : null;
+            } catch (e) { return null; }
         }
 
         function fetchQuestions() {
@@ -885,10 +1029,17 @@
                         .order('created_at', { ascending: true });
                     if (res.error) throw res.error;
                     State.questions = res.data || [];
+                    // فقط سوالات بازیکن (بدون گزینه صحیح/فیلدهای مدیریتی) کش می‌شوند تا
+                    // پاسخ صحیح هرگز روی دستگاه بازیکن ذخیره نشود.
+                    if (!State.isAdmin) cacheQuestions(State.questions);
                     if (State.isAdmin) renderAdminQuestionsList();
                 } catch (e) {
-                    console.error('خطا در دریافت سوالات:', e);
-                    State.questions = [];
+                    console.error('خطا در دریافت سوالات، تلاش برای استفاده از نسخه کش‌شده:', e);
+                    // روی اینترنت ضعیف/قطعی لحظه‌ای، اگر قبلاً یک‌بار سوالات با موفقیت
+                    // دریافت شده باشند، به‌جای خالی ماندن State.questions (که باعث خطای
+                    // «دریافت سوالات» و توقف کامل بازیکن می‌شود)، از کش محلی استفاده می‌شود.
+                    var cached = !State.isAdmin ? readCachedQuestions() : null;
+                    State.questions = cached && cached.length ? cached : [];
                 }
             })();
             return State.questionsReady;
@@ -1121,6 +1272,15 @@
                     payload: { game_start_at: gameStartAt }
                 });
 
+                // ذخیره‌ی جداگانه و غیربحرانی: اگر این upsert به هر دلیلی (مثلاً RLS) شکست
+                // بخورد، جریان اصلی مسابقه که بر پایه‌ی Broadcast است کاملاً دست‌نخورده باقی
+                // می‌ماند؛ این فقط یک شبکه‌ی ایمنی برای بازیکنانی است که پیام را از دست می‌دهند.
+                try {
+                    await supabaseClient.from('settings').upsert({ key: 'game_state', value: { game_start_at: gameStartAt, started: true } });
+                } catch (settingsErr) {
+                    console.error('خطا در ذخیره‌ی game_state (غیربحرانی):', settingsErr);
+                }
+
                 startAdminLiveQuestions(gameStartAt);
                 alert("دستور شروع مسابقه صادر شد. شروع رسمی تا ۵ ثانیه دیگر انجام می‌شود.");
                 fetchPlayersList();
@@ -1140,6 +1300,11 @@
                 if (res.error) throw res.error;
                 stopAdminLiveQuestions();
                 State.gameStartAt = null;
+                try {
+                    await supabaseClient.from('settings').upsert({ key: 'game_state', value: { game_start_at: null, started: false } });
+                } catch (settingsErr) {
+                    console.error('خطا در پاکسازی game_state (غیربحرانی):', settingsErr);
+                }
                 await State.broadcastChannel.send({ type: 'broadcast', event: 'RESET_GAME' });
                 alert("مسابقه ریست شد و کلیه شرکت‌کنندگان پاک شدند.");
                 fetchPlayersList();
@@ -1276,6 +1441,109 @@
             if (banner) banner.classList.toggle('active', !!show);
         }
 
+        /* بنر آفلاین: علاوه بر بنر قبلی که فقط وقتی کانال Realtime قطع می‌شود ظاهر
+           می‌شود، اینجا مستقیماً از رویدادهای online/offline مرورگر هم استفاده می‌کنیم تا
+           در قطعی کامل اینترنت (نه فقط قطعی کانال) کاربر فوراً مطلع شود؛ به محض وصل شدن
+           دوباره، تلاش برای اتصال مجدد کانال هم آغاز می‌شود. */
+        function showOfflineBanner(show) {
+            var banner = document.getElementById('offlineBanner');
+            if (banner) banner.classList.toggle('active', !!show);
+        }
+        window.addEventListener('offline', function() { showOfflineBanner(true); });
+        window.addEventListener('online', function() {
+            showOfflineBanner(false);
+            try { initBroadcast(); } catch (e) {}
+        });
+
+        /* رویدادهای Broadcast (START_GAME / RESET_GAME) یک‌بارمصرف‌اند و برای کلاینتی که
+           لحظه‌ی ارسال آن‌ها آفلاین/دیسکانکت بوده، هرگز دوباره ارسال نمی‌شوند. اگر گوشی
+           بازیکن قفل شده یا در پس‌زمینه رفته و کانال قطع شود، بعد از reconnect باید خودمان
+           وضعیت واقعی بازیکن را از دیتابیس بپرسیم؛ در غیر این‌صورت او تا ابد روی صفحه
+           انتظار یا صفحه‌ی فعلی‌اش گیر می‌ماند بدون این‌که بداند بازی شروع/تمام شده.
+           برای وضعیت 'playing'ای که کاملاً از دستش رفته (چون لحظه‌ی شروع دقیق مسابقه —
+           gameStartAt — فقط در همان broadcast اولیه ارسال می‌شود و جای دیگری ذخیره نشده)
+           امن‌ترین راه، استفاده از همان مسیر تست‌شده‌ی رفرش صفحه (restorePlayerSession)
+           است، نه حدس زدن زمان باقی‌مانده. */
+        /* استخراج‌شده از داخل مدیر رویداد START_GAME تا هم آنجا و هم مسیر جبرانی
+           reconnect بتوانند از همین منطق سه‌بار تلاش استفاده کنند؛ رفتار دقیقاً همانی است
+           که قبلاً به‌صورت inline وجود داشت. */
+        async function markPlayerPlayingWithRetry(playerId) {
+            for (var attempt = 0; attempt < 3; attempt++) {
+                try {
+                    var updRes = await supabaseClient.from('players').update({ status: 'playing' }).eq('id', playerId);
+                    if (updRes.error) throw updRes.error;
+                    return true;
+                } catch (e) {
+                    console.error('خطا در به‌روزرسانی وضعیت بازیکن به playing (تلاش ' + (attempt + 1) + ' از 3):', e);
+                    if (attempt < 2) await new Promise(function(r) { setTimeout(r, 500); });
+                }
+            }
+            return false;
+        }
+
+        async function resyncAfterReconnect() {
+            if (State.isAdmin || !State.player || !State.player.id) return;
+            try {
+                var res = await supabaseClient.from('players').select('status, score').eq('id', State.player.id).maybeSingle();
+                if (res.error || !res.data) return;
+                var data = res.data;
+                var currentScreen = document.querySelector('.screen.active');
+                var currentScreenId = currentScreen ? currentScreen.id : '';
+
+                if (data.status === 'eliminated' && currentScreenId !== 'eliminatedScreen') {
+                    clearInterval(State.timerInterval);
+                    State.timerInterval = null;
+                    State.activeTimerTick = null;
+                    clearPlayerSession();
+                    switchScreen('eliminated');
+                    return;
+                }
+                if (data.status === 'winner' && currentScreenId !== 'winnerScreen') {
+                    State.score = data.score || State.score;
+                    document.getElementById('finalScoreText').textContent = 'امتیاز: ' + toFa(State.score);
+                    clearInterval(State.timerInterval);
+                    State.timerInterval = null;
+                    clearPlayerSession();
+                    switchScreen('winner');
+                    return;
+                }
+
+                /* نکته‌ی مهم: وضعیت 'playing' در دیتابیس فقط وقتی ثبت می‌شود که خودِ همین
+                   بازیکن پیام START_GAME را دریافت کرده باشد (در همان لحظه صفحه‌اش هم عوض
+                   می‌شود). پس اگر بازیکن کاملاً آفلاین بوده و پیام را از دست داده، status او
+                   همچنان 'waiting' می‌ماند — بررسی روی status اینجا هیچ‌وقت این حالت را
+                   نمی‌گیرد. به‌جایش باید مستقیماً از ردیف game_state (که ادمین هنگام شروع
+                   مسابقه می‌نویسد) بپرسیم که آیا مسابقه واقعاً شروع شده یا نه. */
+                if (data.status === 'waiting' && currentScreenId === 'waitingScreen') {
+                    var gameState = await fetchGameState();
+                    if (!gameState || !gameState.started || !gameState.game_start_at) return;
+
+                    await waitForQuestionsReady(15000).catch(function() {});
+                    if (!State.questions || State.questions.length === 0) return;
+
+                    var sched = resolveScheduleFromStartAt(Number(gameState.game_start_at));
+                    if (!sched || sched.notStartedYet) return; // هنوز واقعاً شروع نشده، صبر می‌کنیم
+
+                    if (sched.finished) {
+                        // کل مدت مسابقه در نبود ما تمام شده؛ داده‌ی کافی برای بازسازی صحیح
+                        // نداریم، پس امن‌ترین کار نمایش پیام و پیشنهاد رفرش است، نه حدس زدن.
+                        document.getElementById('pWaitName').textContent =
+                            document.getElementById('pWaitName').textContent + ' — مسابقه به پایان رسیده است. لطفاً صفحه را رفرش کنید.';
+                        return;
+                    }
+
+                    var ok = await markPlayerPlayingWithRetry(State.player.id);
+                    if (!ok) return; // در تلاش reconnect بعدی دوباره امتحان می‌شود
+
+                    State.gameStartAt = Number(gameState.game_start_at);
+                    switchScreen('game');
+                    renderQuestion(sched.index, sched.remainingSeconds, sched.startAtForThisQ);
+                }
+            } catch (e) {
+                console.error('خطا در همگام‌سازی پس از اتصال مجدد:', e);
+            }
+        }
+
         function initBroadcast() {
             if (State.broadcastChannel) {
                 try { supabaseClient.removeChannel(State.broadcastChannel); } catch (e) {}
@@ -1285,11 +1553,14 @@
                 .on('broadcast', { event: 'START_GAME' }, async function(data) {
                     if (State.player && !State.isAdmin) {
                         try {
-                            await waitForQuestionsReady(8000);
+                            await waitForQuestionsReady(15000);
                         } catch (e) {
-                            switchScreen('game');
-                            showInlineGameError("خطا در دریافت سوالات. لطفاً صفحه را رفرش کنید.");
-                            return;
+                            // اگر دریافت زنده روی اینترنت ضعیف زمان‌بر شد، قبل از نمایش خطا
+                            // یک بار نسخه‌ی کش‌شده‌ی سوالات (از بازدید موفق قبلی) را امتحان کن.
+                            var cachedFallback = readCachedQuestions();
+                            if (cachedFallback && cachedFallback.length) {
+                                State.questions = cachedFallback;
+                            }
                         }
                         if (!State.questions || State.questions.length === 0) {
                             switchScreen('game');
@@ -1313,19 +1584,7 @@
                         // فقط res.error پر می‌شود. قبلاً این خطا بررسی نمی‌شد و برنامه بی‌صدا
                         // ادامه می‌داد، در حالی که وضعیت بازیکن در دیتابیس هرگز 'playing' نمی‌شد
                         // و بعداً ثبت پاسخ با خطای «در وضعیت پاسخ‌گویی نیست» شکست می‌خورد.
-                        var statusUpdateOk = false;
-                        var statusUpdateErr = null;
-                        for (var attempt = 0; attempt < 3 && !statusUpdateOk; attempt++) {
-                            try {
-                                var updRes = await supabaseClient.from('players').update({ status: 'playing' }).eq('id', State.player.id);
-                                if (updRes.error) throw updRes.error;
-                                statusUpdateOk = true;
-                            } catch (e) {
-                                statusUpdateErr = e;
-                                console.error('خطا در به‌روزرسانی وضعیت بازیکن به playing (تلاش ' + (attempt + 1) + ' از 3):', e);
-                                if (attempt < 2) await new Promise(function(r) { setTimeout(r, 500); });
-                            }
-                        }
+                        var statusUpdateOk = await markPlayerPlayingWithRetry(State.player.id);
 
                         if (!statusUpdateOk) {
                             switchScreen('game');
@@ -1353,9 +1612,11 @@
                 })
                 .subscribe(function(status) {
                     if (status === 'SUBSCRIBED') {
+                        var isReconnect = broadcastRetryCount > 0;
                         broadcastRetryCount = 0;
                         clearTimeout(broadcastRetryTimeout);
                         showConnBanner(false);
+                        if (isReconnect) resyncAfterReconnect();
                     } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
                         showConnBanner(true);
                         var delay = Math.min(1000 * Math.pow(2, broadcastRetryCount), 15000);
@@ -1394,6 +1655,7 @@
 
             try {
                 initTheme();
+                if (typeof navigator.onLine === 'boolean' && !navigator.onLine) showOfflineBanner(true);
                 await fetchQuestions();
                 fetchAboutUs();
                 initBroadcast();
