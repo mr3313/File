@@ -506,6 +506,15 @@
             document.getElementById('themeToggleBtn').textContent = savedTheme === 'dark' ? '🌙' : '☀️';
         }
 
+        /* عنصر نمایش امتیاز فقط داخل evaluateAnswerAndNext آپدیت می‌شد؛ در نتیجه بعد از
+           رفرش صفحه، هرچند State.score و دیتابیس درست بودند، خودِ عدد روی صفحه به مقدار
+           پیش‌فرض HTML (۰) برمی‌گشت. این تابع مشترک باید هرجا State.score تغییر می‌کند یا
+           صفحه‌ی بازی دوباره رندر می‌شود (از جمله بعد از بازیابی نشست) فراخوانی شود. */
+        function updateScoreDisplay() {
+            var el = document.getElementById('scoreText');
+            if (el) el.textContent = 'امتیاز: ' + toFa(State.score);
+        }
+
         function switchScreen(id) {
             var screens = document.querySelectorAll('.screen');
             for (var i = 0; i < screens.length; i++) {
@@ -554,6 +563,7 @@
                 var data = res.data;
                 State.player = data;
                 State.score = data.score || 0;
+                updateScoreDisplay();
 
                 if (data.status === 'eliminated') {
                     switchScreen('eliminated');
@@ -757,7 +767,7 @@
                 }
 
                 State.score = result.new_score || 0;
-                document.getElementById('scoreText').textContent = 'امتیاز: ' + toFa(State.score);
+                updateScoreDisplay();
                 persistPlayerSession();
 
                 if (result.is_correct) {
@@ -827,6 +837,7 @@
 
             State.currentQIndex = index;
             State.selectedOption = null;
+            updateScoreDisplay();
             var q = State.questions[index];
 
             var totalLimit = q.time_limit_seconds || 30;
@@ -1297,9 +1308,31 @@
                             await new Promise(function(resolve) { setTimeout(resolve, waitMs); });
                         }
 
-                        try {
-                            await supabaseClient.from('players').update({ status: 'playing' }).eq('id', State.player.id);
-                        } catch (e) { console.error(e); }
+                        // برخلاف قبل، اینجا خطای res.error هم چک می‌شود: در Supabase وقتی یک
+                        // RLS Policy درخواست را رد می‌کند، کلاینت exception پرتاب نمی‌کند،
+                        // فقط res.error پر می‌شود. قبلاً این خطا بررسی نمی‌شد و برنامه بی‌صدا
+                        // ادامه می‌داد، در حالی که وضعیت بازیکن در دیتابیس هرگز 'playing' نمی‌شد
+                        // و بعداً ثبت پاسخ با خطای «در وضعیت پاسخ‌گویی نیست» شکست می‌خورد.
+                        var statusUpdateOk = false;
+                        var statusUpdateErr = null;
+                        for (var attempt = 0; attempt < 3 && !statusUpdateOk; attempt++) {
+                            try {
+                                var updRes = await supabaseClient.from('players').update({ status: 'playing' }).eq('id', State.player.id);
+                                if (updRes.error) throw updRes.error;
+                                statusUpdateOk = true;
+                            } catch (e) {
+                                statusUpdateErr = e;
+                                console.error('خطا در به‌روزرسانی وضعیت بازیکن به playing (تلاش ' + (attempt + 1) + ' از 3):', e);
+                                if (attempt < 2) await new Promise(function(r) { setTimeout(r, 500); });
+                            }
+                        }
+
+                        if (!statusUpdateOk) {
+                            switchScreen('game');
+                            showInlineGameError("خطا در آماده‌سازی بازی برای شما (مشکل دسترسی به سرور). لطفاً صفحه را رفرش کنید؛ اگر ادامه داشت، با مدیر مسابقه تماس بگیرید.");
+                            return;
+                        }
+
                         switchScreen('game');
                         renderQuestion(0, undefined, startAt);
                     }
@@ -1371,18 +1404,9 @@
             }
         };
 
-        function bootMabsa() {
-    if (window.__mabsaBooted) return;
-    window.__mabsaBooted = true;
-    window.startSupabaseLoading();
-}
-
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', bootMabsa);
-} else {
-    bootMabsa();
-}
-
+        window.onload = function() {
+            window.startSupabaseLoading();
+        };
     </script>
 </body>
 </html>
