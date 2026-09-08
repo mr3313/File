@@ -409,7 +409,178 @@
 
     </div>
 
-    <script>
+    
+<script>
+/* =========================================================
+   MABSA PRODUCTION DIAGNOSTICS
+   Zero-network error recorder.
+   Only failures and important recovery events are stored locally.
+   It never sends telemetry to Supabase and never participates in
+   the question/answer request path.
+   ========================================================= */
+(function () {
+    'use strict';
+
+    var STORAGE_KEY = 'mabsa_diag_v3_' + (
+        window.GAME_ID || 'b60198f0-6d4b-4df2-ae4d-21d920c80092'
+    );
+    var MAX_ENTRIES = 200;
+    var originalConsoleError = console.error ? console.error.bind(console) : function(){};
+
+    function getStateSnapshot() {
+        try {
+            var s = window.State || {};
+            return {
+                player_id: s.player && s.player.id ? String(s.player.id) : null,
+                player_name: s.player && s.player.first_name
+                    ? (String(s.player.first_name) + ' ' + String(s.player.last_name || '')).trim()
+                    : null,
+                question_index: Number.isFinite(s.currentQIndex) ? s.currentQIndex : null,
+                score: Number.isFinite(s.score) ? s.score : null,
+                answering: !!s.answering,
+                is_admin: !!s.isAdmin,
+                online: navigator.onLine !== false
+            };
+        } catch (_) {
+            return {};
+        }
+    }
+
+    function safeText(value) {
+        try {
+            if (value instanceof Error) {
+                return {
+                    name: value.name || 'Error',
+                    message: value.message || String(value),
+                    code: value.code || null,
+                    details: value.details || null,
+                    hint: value.hint || null
+                };
+            }
+            if (value && typeof value === 'object') {
+                return JSON.parse(JSON.stringify(value, function (key, val) {
+                    if (key === 'password' || key === 'access_token' || key === 'refresh_token') {
+                        return '[REDACTED]';
+                    }
+                    if (typeof val === 'bigint') return String(val);
+                    return val;
+                }));
+            }
+            return String(value);
+        } catch (_) {
+            return String(value);
+        }
+    }
+
+    function read() {
+        try {
+            var raw = localStorage.getItem(STORAGE_KEY);
+            var data = raw ? JSON.parse(raw) : [];
+            return Array.isArray(data) ? data : [];
+        } catch (_) {
+            return [];
+        }
+    }
+
+    function write(data) {
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(data.slice(-MAX_ENTRIES)));
+        } catch (_) {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(data.slice(-40)));
+            } catch (_) {}
+        }
+    }
+
+    function capture(type, details) {
+        try {
+            var entry = {
+                id: 'diag_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+                ts: new Date().toISOString(),
+                type: type,
+                details: safeText(details),
+                page: location.href,
+                state: getStateSnapshot()
+            };
+            var data = read();
+            data.push(entry);
+            write(data);
+            return entry;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    window.MabsaDiagnostics = {
+        capture: capture,
+        getLogs: read,
+        clear: function () {
+            try { localStorage.removeItem(STORAGE_KEY); } catch (_) {}
+        },
+        export: function () {
+            try {
+                var blob = new Blob(
+                    [JSON.stringify(read(), null, 2)],
+                    { type: 'application/json;charset=utf-8' }
+                );
+                var url = URL.createObjectURL(blob);
+                var a = document.createElement('a');
+                a.href = url;
+                a.download = 'mabsa-diagnostics-' +
+                    new Date().toISOString().replace(/[:.]/g, '-') + '.json';
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(function () {
+                    URL.revokeObjectURL(url);
+                    a.remove();
+                }, 1000);
+            } catch (e) {
+                try { originalConsoleError('Diagnostics export failed', e); } catch (_) {}
+            }
+        }
+    };
+
+    window.addEventListener('error', function (e) {
+        capture('javascript_error', {
+            message: e.message,
+            source: e.filename,
+            line: e.lineno,
+            column: e.colno,
+            error: e.error
+        });
+    }, true);
+
+    window.addEventListener('unhandledrejection', function (e) {
+        capture('unhandled_promise_rejection', e.reason);
+    });
+
+    window.addEventListener('offline', function () {
+        capture('network_offline', 'Browser reported offline');
+    });
+
+    window.addEventListener('online', function () {
+        capture('network_online', 'Browser reported online');
+    });
+
+    /* Do not intercept fetch/XHR: doing so would add overhead and can itself
+       interfere with the application's network behavior. Explicit Supabase
+       errors are captured at their actual call sites below. */
+    window.MabsaDiagnostics.captureSupabaseError = function (operation, error, extra) {
+        capture('supabase_error', {
+            operation: operation,
+            error: error,
+            extra: extra || null
+        });
+    };
+
+    /* Console errors are recorded locally, but the original console behavior remains. */
+    console.error = function () {
+        try { capture('console_error', Array.prototype.slice.call(arguments)); } catch (_) {}
+        originalConsoleError.apply(console, arguments);
+    };
+})();
+</script>
+<script>
         (function() {
             var cdnSources = [
                 "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2",
@@ -485,13 +656,42 @@
             } catch (e) {}
         }
 
+        function diagError(operation, error, extra) {
+            try {
+                if (window.MabsaDiagnostics && typeof window.MabsaDiagnostics.captureSupabaseError === 'function') {
+                    window.MabsaDiagnostics.captureSupabaseError(operation, error, extra);
+                }
+            } catch (e) {}
+        }
+
+        function diagEvent(type, details) {
+            try {
+                if (window.MabsaDiagnostics) window.MabsaDiagnostics.capture(type, details);
+            } catch (e) {}
+        }
+
+        function escapeHtml(value) {
+            return String(value === null || value === undefined ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         window.addEventListener('error', function (e) {
-            console.error('خطای سراسری:', e.error || e.message);
+            diagEvent('javascript_error', {
+                message: e.message,
+                source: e.filename,
+                line: e.lineno,
+                column: e.colno,
+                error: e.error
+            });
             showFatalError("خطای غیرمنتظره‌ای رخ داد. لطفاً صفحه را رفرش کنید.");
         });
 
         window.addEventListener('unhandledrejection', function (e) {
-            console.error('خطای Promise:', e.reason);
+            diagEvent('unhandled_promise_rejection', e.reason);
             showFatalError("خطای غیرمنتظره‌ای رخ داد. لطفاً صفحه را رفرش کنید.");
         });
 
@@ -566,6 +766,8 @@
         function persistPlayerSession() {
             try {
                 sessionStorage.setItem('mabsa_session', JSON.stringify({
+                    version: 2,
+                    game_id: GAME_ID,
                     player: State.player,
                     currentQIndex: State.currentQIndex,
                     qStartTime: State.qStartTime,
@@ -586,7 +788,10 @@
                 if (raw) saved = JSON.parse(raw);
             } catch (e) { saved = null; }
 
-            if (!saved || !saved.player || !saved.player.id) return;
+            if (!saved || saved.version !== 2 || saved.game_id !== GAME_ID || !saved.player || !saved.player.id) {
+                if (saved && saved.game_id && saved.game_id !== GAME_ID) clearPlayerSession();
+                return;
+            }
 
             State.player = saved.player;
             State.currentQIndex = saved.currentQIndex || 0;
@@ -596,7 +801,10 @@
 
             try {
                 var res = await supabaseClient.from('players').select('*').eq('id', saved.player.id).maybeSingle();
-                if (res.error || !res.data) return;
+                if (res.error || !res.data) {
+                    if (res.error) diagError('restorePlayerSession.players.select', res.error);
+                    return;
+                }
                 
                 var data = res.data;
                 State.player = data;
@@ -663,7 +871,7 @@
         async function fetchAboutUs() {
             try {
                 var res = await supabaseClient.from('settings').select('value').eq('key', 'about_us').single();
-                if (res.error) throw res.error;
+                if (res.error) { diagError('fetchAboutUs.settings.select', res.error); throw res.error; }
                 if (res.data && res.data.value) {
                     var val = res.data.value;
                     State.aboutUsData = val;
@@ -702,7 +910,7 @@
 
             try {
                 var res = await supabaseClient.from('settings').upsert({ key: 'about_us', value: updated });
-                if (res.error) throw res.error;
+                if (res.error) { diagError('editAbout.settings.upsert', res.error); throw res.error; }
                 alert("اطلاعات درباره ما با موفقیت به روز شد.");
                 fetchAboutUs();
             } catch (err) {
@@ -792,15 +1000,31 @@
         function showInlineGameError(msg, allowRetry) {
             var box = document.getElementById('optionsBox');
             if (!box) return;
-            var html = '<div class="error-msg">' + msg + '</div>';
+            diagEvent('ui_game_error', { message: String(msg || '') });
+            var wrapper = document.createElement('div');
+            wrapper.className = 'error-msg';
+            wrapper.textContent = String(msg || '');
+            box.innerHTML = '';
+            box.appendChild(wrapper);
             if (allowRetry) {
-                html += '<button type="button" class="btn btn-primary" onclick="retryEvaluate()">تلاش مجدد</button>';
+                var retry = document.createElement('button');
+                retry.type = 'button';
+                retry.className = 'btn btn-primary';
+                retry.textContent = 'تلاش مجدد';
+                retry.onclick = retryEvaluate;
+                box.appendChild(retry);
             }
-            box.innerHTML = html;
         }
 
+        var retryAnswerInProgress = false;
         function retryEvaluate() {
-            evaluateAnswerAndNext();
+            if (retryAnswerInProgress || State.answering) return;
+            retryAnswerInProgress = true;
+            try {
+                evaluateAnswerAndNext();
+            } finally {
+                setTimeout(function() { retryAnswerInProgress = false; }, 250);
+            }
         }
 
         async function evaluateAnswerAndNext() {
@@ -826,7 +1050,10 @@
                     p_selected_option: State.selectedOption
                 }), 15000);
 
-                if (res.error) throw res.error;
+                if (res.error) { diagError('evaluateAnswerAndNext.submit_quiz_answer', res.error, {
+                    question_id: q.id,
+                    selected_option: State.selectedOption
+                }); throw res.error; }
                 var result = Array.isArray(res.data) ? res.data[0] : res.data;
                 if (!result) throw new Error('پاسخ نامعتبر از سرور');
 
@@ -922,7 +1149,10 @@
         async function fetchGameState() {
             try {
                 var res = await supabaseClient.from('settings').select('value').eq('key', 'game_state').maybeSingle();
-                if (res.error || !res.data || !res.data.value) return null;
+                if (res.error || !res.data || !res.data.value) {
+                    if (res.error) diagError('fetchGameState.settings.select', res.error);
+                    return null;
+                }
                 return res.data.value;
             } catch (e) {
                 return null;
@@ -1005,14 +1235,29 @@
 
         var QUESTIONS_CACHE_KEY = 'mabsa_questions_cache_' + GAME_ID;
 
+        var QUESTIONS_CACHE_TTL_MS = 2 * 60 * 60 * 1000;
+
         function cacheQuestions(list) {
-            try { localStorage.setItem(QUESTIONS_CACHE_KEY, JSON.stringify(list)); } catch (e) {}
+            try {
+                if (!Array.isArray(list) || !list.length) return;
+                localStorage.setItem(QUESTIONS_CACHE_KEY, JSON.stringify({
+                    version: 2,
+                    game_id: GAME_ID,
+                    saved_at: Date.now(),
+                    questions: list
+                }));
+            } catch (e) {}
         }
 
         function readCachedQuestions() {
             try {
                 var raw = localStorage.getItem(QUESTIONS_CACHE_KEY);
-                return raw ? JSON.parse(raw) : null;
+                if (!raw) return null;
+                var parsed = JSON.parse(raw);
+                if (!parsed || parsed.version !== 2 || parsed.game_id !== GAME_ID) return null;
+                if (!Array.isArray(parsed.questions) || !parsed.questions.length) return null;
+                if (!Number.isFinite(parsed.saved_at) || Date.now() - parsed.saved_at > QUESTIONS_CACHE_TTL_MS) return null;
+                return parsed.questions;
             } catch (e) { return null; }
         }
 
@@ -1027,7 +1272,10 @@
                         .select(selectCols)
                         .eq('game_id', GAME_ID)
                         .order('created_at', { ascending: true });
-                    if (res.error) throw res.error;
+                    if (res.error) {
+                        diagError('fetchQuestions.questions.select', res.error, { is_admin: !!State.isAdmin });
+                        throw res.error;
+                    }
                     State.questions = res.data || [];
                     // فقط سوالات بازیکن (بدون گزینه صحیح/فیلدهای مدیریتی) کش می‌شوند تا
                     // پاسخ صحیح هرگز روی دستگاه بازیکن ذخیره نشود.
@@ -1086,7 +1334,7 @@
 
             try {
                 var checkRes = await supabaseClient.from('players').select('id').eq('game_id', GAME_ID).eq('phone', phone).maybeSingle();
-                if (checkRes.error) throw checkRes.error;
+                if (checkRes.error) { diagError('register.players.duplicate_check', checkRes.error); throw checkRes.error; }
 
                 if (checkRes.data) {
                     err.textContent = "این شماره قبلاً در مسابقه ثبت شده است.";
@@ -1099,6 +1347,7 @@
                 }]).select().single();
 
                 if (insRes.error) {
+                    diagError('register.players.insert', insRes.error, { phone: '[REDACTED]' });
                     // کد 23505 یعنی نقض محدودیت یکتا (در صورت وجود قید unique روی شماره در دیتابیس)
                     if (insRes.error.code === '23505') {
                         err.textContent = "این شماره قبلاً در مسابقه ثبت شده است.";
@@ -1232,6 +1481,7 @@
             try {
                 var res = await supabaseClient.auth.signInWithPassword({ email: email, password: pass });
                 if (res.error) {
+                    diagError('adminLogin.auth.signInWithPassword', res.error);
                     document.getElementById('admError').textContent = "ایمیل یا رمز عبور اشتباه است.";
                     document.getElementById('admError').classList.remove('hidden');
                 } else {
@@ -1266,17 +1516,27 @@
                 var gameStartAt = Date.now() + 5000;
                 State.gameStartAt = gameStartAt;
 
-                await State.broadcastChannel.send({
+                if (!State.broadcastChannel) throw new Error('Realtime channel is not initialized');
+                var startSendResult = await State.broadcastChannel.send({
                     type: 'broadcast',
                     event: 'START_GAME',
                     payload: { game_start_at: gameStartAt }
                 });
+                if (startSendResult && startSendResult.error) {
+                    diagError('adminStartGame.broadcast.START_GAME', startSendResult.error);
+                    throw startSendResult.error;
+                }
+                diagEvent('game_start_command_sent', { game_start_at: gameStartAt });
 
                 // ذخیره‌ی جداگانه و غیربحرانی: اگر این upsert به هر دلیلی (مثلاً RLS) شکست
                 // بخورد، جریان اصلی مسابقه که بر پایه‌ی Broadcast است کاملاً دست‌نخورده باقی
                 // می‌ماند؛ این فقط یک شبکه‌ی ایمنی برای بازیکنانی است که پیام را از دست می‌دهند.
                 try {
-                    await supabaseClient.from('settings').upsert({ key: 'game_state', value: { game_start_at: gameStartAt, started: true } });
+                    var gameStateRes = await supabaseClient.from('settings').upsert({ key: 'game_state', value: { game_start_at: gameStartAt, started: true } });
+                    if (gameStateRes.error) {
+                        diagError('adminStartGame.settings.upsert_game_state', gameStateRes.error);
+                        throw gameStateRes.error;
+                    }
                 } catch (settingsErr) {
                     console.error('خطا در ذخیره‌ی game_state (غیربحرانی):', settingsErr);
                 }
@@ -1297,15 +1557,25 @@
             adminActionInProgress = true;
             try {
                 var res = await supabaseClient.rpc('reset_quiz_game', { p_game_id: GAME_ID });
-                if (res.error) throw res.error;
+                if (res.error) { diagError('adminResetGame.reset_quiz_game', res.error); throw res.error; }
                 stopAdminLiveQuestions();
                 State.gameStartAt = null;
                 try {
-                    await supabaseClient.from('settings').upsert({ key: 'game_state', value: { game_start_at: null, started: false } });
+                    var resetStateRes = await supabaseClient.from('settings').upsert({ key: 'game_state', value: { game_start_at: null, started: false } });
+                    if (resetStateRes.error) {
+                        diagError('adminResetGame.settings.clear_game_state', resetStateRes.error);
+                        throw resetStateRes.error;
+                    }
                 } catch (settingsErr) {
                     console.error('خطا در پاکسازی game_state (غیربحرانی):', settingsErr);
                 }
-                await State.broadcastChannel.send({ type: 'broadcast', event: 'RESET_GAME' });
+                if (!State.broadcastChannel) throw new Error('Realtime channel is not initialized');
+                var resetSendResult = await State.broadcastChannel.send({ type: 'broadcast', event: 'RESET_GAME' });
+                if (resetSendResult && resetSendResult.error) {
+                    diagError('adminResetGame.broadcast.RESET_GAME', resetSendResult.error);
+                    throw resetSendResult.error;
+                }
+                diagEvent('game_reset_command_sent', { game_id: GAME_ID });
                 alert("مسابقه ریست شد و کلیه شرکت‌کنندگان پاک شدند.");
                 fetchPlayersList();
             } catch (e) {
@@ -1334,7 +1604,9 @@
                     if (p.status === 'eliminated') statusBadge = '<span class="status-pill status-eliminated">سوخته ❌</span>';
                     if (p.status === 'winner') statusBadge = '<span class="status-pill status-winner">برنده 🏆</span>';
 
-                    tbody.innerHTML += '<tr><td>' + p.first_name + ' ' + p.last_name + '</td><td>' + p.phone + '</td><td>' + toFa(p.score || 0) + '</td><td>' + statusBadge + '</td></tr>';
+                    tbody.innerHTML += '<tr><td>' + escapeHtml((p.first_name || '') + ' ' + (p.last_name || '')) +
+                        '</td><td>' + escapeHtml(p.phone || '') + '</td><td>' +
+                        toFa(p.score || 0) + '</td><td>' + statusBadge + '</td></tr>';
                 });
             } catch (e) {
                 console.error('خطا در دریافت لیست بازیکنان:', e);
@@ -1360,11 +1632,11 @@
             try {
                 if (editId) {
                     var resUpdate = await supabaseClient.from('questions').update(qData).eq('id', editId);
-                    if (resUpdate.error) throw resUpdate.error;
+                    if (resUpdate.error) { diagError('saveQuestion.questions.update', resUpdate.error, { question_id: editId }); throw resUpdate.error; }
                     alert("سوال ویرایش شد.");
                 } else {
                     var resInsert = await supabaseClient.from('questions').insert([qData]);
-                    if (resInsert.error) throw resInsert.error;
+                    if (resInsert.error) { diagError('saveQuestion.questions.insert', resInsert.error); throw resInsert.error; }
                     alert("سوال جدید اضافه شد.");
                 }
 
@@ -1383,12 +1655,12 @@
                 box.innerHTML += `
                     <div style="background: rgba(0,0,0,0.05); padding: 10px; border-radius: var(--r-md); margin-bottom: 8px; display:flex; justify-content:space-between; align-items:center;">
                         <div>
-                            <strong>${i + 1}. ${q.question_text}</strong>
+                            <strong>${i + 1}. ${escapeHtml(q.question_text)}</strong>
                             <div style="font-size: 11px; color: var(--text-muted);">زمان: ${toFa(q.time_limit_seconds)} ثانیه</div>
                         </div>
                         <div style="display:flex; gap: 4px;">
-                            <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 11px; margin:0;" onclick="editQuestion('${q.id}')">ویرایش</button>
-                            <button class="btn btn-danger" style="padding: 4px 8px; font-size: 11px; margin:0;" onclick="deleteQuestion('${q.id}')">حذف</button>
+                            <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 11px; margin:0;" onclick="editQuestion('${escapeHtml(q.id)}')">ویرایش</button>
+                            <button class="btn btn-danger" style="padding: 4px 8px; font-size: 11px; margin:0;" onclick="deleteQuestion('${escapeHtml(q.id)}')">حذف</button>
                         </div>
                     </div>
                 `;
@@ -1424,7 +1696,7 @@
             if (confirm("آیا از حذف این سوال اطمینان دارید؟")) {
                 try {
                     var res = await supabaseClient.from('questions').delete().eq('id', id);
-                    if (res.error) throw res.error;
+                    if (res.error) { diagError('deleteQuestion.questions.delete', res.error, { question_id: id }); throw res.error; }
                     fetchQuestions();
                 } catch (e) {
                     console.error(e);
@@ -1471,7 +1743,10 @@
             for (var attempt = 0; attempt < 3; attempt++) {
                 try {
                     var updRes = await supabaseClient.from('players').update({ status: 'playing' }).eq('id', playerId);
-                    if (updRes.error) throw updRes.error;
+                    if (updRes.error) {
+                        diagError('markPlayerPlayingWithRetry.players.update', updRes.error, { player_id: playerId, attempt: attempt + 1 });
+                        throw updRes.error;
+                    }
                     return true;
                 } catch (e) {
                     console.error('خطا در به‌روزرسانی وضعیت بازیکن به playing (تلاش ' + (attempt + 1) + ' از 3):', e);
@@ -1485,7 +1760,10 @@
             if (State.isAdmin || !State.player || !State.player.id) return;
             try {
                 var res = await supabaseClient.from('players').select('status, score').eq('id', State.player.id).maybeSingle();
-                if (res.error || !res.data) return;
+                if (res.error || !res.data) {
+                    if (res.error) diagError('resyncAfterReconnect.players.select', res.error);
+                    return;
+                }
                 var data = res.data;
                 var currentScreen = document.querySelector('.screen.active');
                 var currentScreenId = currentScreen ? currentScreen.id : '';
@@ -1672,3 +1950,26 @@
     </script>
 </body>
 </html>
+
+<script>
+(function () {
+    function installDiagnosticsButton() {
+        try {
+            if (!window.State || !window.State.isAdmin || !window.MabsaDiagnostics) return;
+            if (document.getElementById('mabsa-diagnostics-export')) return;
+            var btn = document.createElement('button');
+            btn.id = 'mabsa-diagnostics-export';
+            btn.type = 'button';
+            btn.textContent = '📥 پرونده فنی';
+            btn.title = 'خروجی خطاهای محلی این دستگاه';
+            btn.style.cssText =
+                'position:fixed;left:10px;bottom:10px;z-index:99999;' +
+                'padding:8px 11px;border-radius:10px;border:1px solid rgba(255,255,255,.2);' +
+                'background:#222;color:#fff;font:600 12px sans-serif;cursor:pointer;';
+            btn.onclick = function () { window.MabsaDiagnostics.export(); };
+            document.body.appendChild(btn);
+        } catch (_) {}
+    }
+    setInterval(installDiagnosticsButton, 2000);
+})();
+</script>
